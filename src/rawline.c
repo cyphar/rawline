@@ -33,19 +33,15 @@
 #endif
 
 /* Convert bool-ish ints to bools. */
-#define tobool(b) (!!b)
+#define BOOL(b) (!!b)
 
 /* VT100 control codes used by rawline. It is assumed the code using these printf-style
  * control code formats knows the amount of args (or things to be subbed in), so we don't
  * need to use functions for these. */
 
-#define C_BELL				"\x7"
-
-/* direction(n) -> move by <n> steps in direction */
-#define C_CUR_MOVE_COL		"\x1b[%dG" /* CHA -- Move to absolute column <n> */
-
-/* clear() -> clear the line as specified */
-#define C_LN_CLEAR_END		"\x1b[0K" /* EL(0) -- Clear from cursor to EOL */
+#define C_BELL				"\x7"		/* BEL -- Ring the terminal bell. */
+#define C_CUR_MOVE_COL		"\x1b[%dG"	/* CHA -- Move to absolute column <n> */
+#define C_LN_CLEAR_END		"\x1b[0K"	/* EL(0) -- Clear from cursor to EOL */
 
 /* Structures used both externally and internally by rawline. External structures end with _t
  * and are typedef'd. Internal structures begin with a single '_' and aren't *ever* typedef'd. */
@@ -402,15 +398,17 @@ static char *_raw_comp_get(raw_t *raw, char *str) {
 	/* filter table with string */
 	int i, searchlen = 0, lenstr = strlen(str);
 	for(i = 0; table[i] != NULL; i++) {
+		/* valid entries for consideration must start with input string */
 		if(!strncmp(str, table[i], lenstr)) {
 			searchlen++;
 
+			/* append the string to the search table */
 			search = realloc(search, searchlen * sizeof(char *));
 			search[searchlen-1] = _raw_strdup(table[i]);
 		}
 	}
 
-	/* null terminate list */
+	/* null terminate search table */
 	search = realloc(search, ++searchlen * sizeof(char *));
 	search[searchlen - 1] = NULL;
 
@@ -419,7 +417,10 @@ static char *_raw_comp_get(raw_t *raw, char *str) {
 		int i;
 		for(i = 0; i < searchlen; i++)
 			free(search[i]);
+
 		free(search);
+
+		/* return original string, since there are no matches */
 		return _raw_strdup(str);
 	}
 
@@ -431,16 +432,20 @@ static char *_raw_comp_get(raw_t *raw, char *str) {
 	do {
 		char ch = search[0][j];
 
+		/* add current char to */
 		comp = realloc(comp, complen + 1);
 		comp[complen] = ch;
 		complen++;
 
+		/* Check if the character in that position is the same in every item in
+		 * the search table. If so, we can use it in the chosen input. */
 		int i;
 		for(i = 1; search[i] != NULL && same; i++)
 			if(ch != search[i][j])
 				same = false;
 
-		if(!ch)
+		/* quit if we hit the null terminator */
+		if(ch == '\0')
 			break;
 
 		j++;
@@ -456,8 +461,8 @@ static char *_raw_comp_get(raw_t *raw, char *str) {
 	/* clean up search table */
 	for(i = 0; search[i] != NULL; i++)
 		free(search[i]);
-	free(search);
 
+	free(search);
 	return comp;
 } /* _raw_comp_get() */
 
@@ -509,9 +514,9 @@ raw_t *raw_new(char *atexit) {
 
 void raw_hist(raw_t *raw, bool set, int size) {
 	assert(raw->safe);
-	assert(raw->settings->history != tobool(set));
+	assert(raw->settings->history != BOOL(set));
 
-	raw->settings->history = tobool(set);
+	raw->settings->history = BOOL(set);
 
 	if(set) {
 		raw->hist = _raw_hist_new(size);
@@ -539,9 +544,9 @@ void raw_hist_add(raw_t *raw) {
 
 void raw_comp(raw_t *raw, bool set, char **(*callback)(char *), void (*cleanup)(char **)) {
 	assert(raw->safe);
-	assert(raw->settings->completion != tobool(set));
+	assert(raw->settings->completion != BOOL(set));
 
-	raw->settings->completion = tobool(set);
+	raw->settings->completion = BOOL(set);
 
 	if(set) {
 		raw->comp = malloc(sizeof(struct _raw_comp));
