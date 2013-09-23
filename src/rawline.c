@@ -271,6 +271,19 @@ static void _raw_redraw(raw_t *raw, bool change) {
 	fflush(stdout);
 } /* _raw_redraw() */
 
+static struct _raw_hist *_raw_hist_new(int size) {
+	struct _raw_hist *hist = malloc(sizeof(struct _raw_hist));
+
+	hist->max = size;
+	hist->len = 0;
+	hist->index = -1;
+
+	hist->history = malloc(sizeof(char *) * hist->max);
+	hist->original = NULL;
+
+	return hist;
+} /* _raw_hist_new() */
+
 static void _raw_set_line(raw_t *raw, char *str, int cursor) {
 	assert(raw->safe);
 
@@ -290,19 +303,17 @@ static void _raw_set_line(raw_t *raw, char *str, int cursor) {
 		raw->line->cursor = 0;
 } /* _raw_set_line() */
 
-static void _raw_hist_free(raw_t *raw) {
-	assert(raw->safe);
-	assert(raw->settings->history);
-
+static void _raw_hist_free(struct _raw_hist *hist) {
 	int i;
-	for(i = 0; i < raw->hist->len; i++)
-		free(raw->hist->history[i]);
+	for(i = 0; i < hist->len; i++)
+		free(hist->history[i]);
 
-	free(raw->hist->history);
-	raw->settings->history = false;
+	free(hist->history);
 
-	raw->hist->len = 0;
-	raw->hist->max = 0;
+	hist->len = 0;
+	hist->max = 0;
+
+	free(hist->original);
 } /* _raw_hist_free() */
 
 static void _raw_hist_add_str(raw_t *raw, char *str) {
@@ -325,9 +336,13 @@ static void _raw_hist_add_str(raw_t *raw, char *str) {
 		raw->hist->len++;
 		if(raw->hist->len > raw->hist->max)
 			raw->hist->len = raw->hist->max;
+
+		raw->hist->history[0] = NULL;
 	}
 
 	/* modify (or add) history item */
+	if(raw->hist->index >= 0)
+		free(raw->hist->history[raw->hist->index]);
 	raw->hist->history[raw->hist->index] = _raw_strdup(str);
 } /* _raw_hist_add_str() */
 
@@ -412,17 +427,11 @@ void raw_hist(raw_t *raw, bool set, int size) {
 	raw->settings->history = tobool(set);
 
 	if(set) {
-		raw->hist = malloc(sizeof(struct _raw_hist));
-		raw->hist->max = size;
-		raw->hist->len = 0;
-		raw->hist->index = -1;
-
-		raw->hist->history = malloc(sizeof(char *) * raw->hist->max);
-		raw->hist->original = NULL;
+		raw->hist = _raw_hist_new(size);
 	}
 	else {
-		_raw_hist_free(raw);
-		free(raw->hist->original);
+		raw->settings->history = false;
+		_raw_hist_free(raw->hist);
 		free(raw->hist);
 	}
 } /* raw_hist() */
@@ -453,8 +462,8 @@ void raw_free(raw_t *raw) {
 
 	/* clear out history */
 	if(raw->settings->history) {
-		_raw_hist_free(raw);
-		free(raw->hist->original);
+		raw->settings->history = false;
+		_raw_hist_free(raw->hist);
 		free(raw->hist);
 	}
 
@@ -485,6 +494,19 @@ char *raw_input(raw_t *raw, char *prompt) {
 	raw->line->prompt->str = prompt;
 	raw->line->prompt->len = strlen(raw->line->prompt->str);
 
+	/* make a copy of the history */
+	struct _raw_hist *hist = NULL;
+
+	if(raw->settings->history) {
+		hist = _raw_hist_new(raw->hist->max);
+
+		int i;
+		for(i = 0; i < raw->hist->len; i++)
+			hist->history[i] = _raw_strdup(raw->hist->history[i]);
+
+		hist->len = raw->hist->len;
+	}
+
 	printf("%s", raw->line->prompt->str);
 	fflush(stdout);
 
@@ -510,6 +532,12 @@ char *raw_input(raw_t *raw, char *prompt) {
 				case 3: /* ctrl-c */
 					/* disable raw mode */
 					_raw_mode(raw, false);
+
+					/* free temporary history */
+					if(raw->settings->history) {
+						_raw_hist_free(hist);
+						free(hist);
+					}
 
 					/* raise the expected signal (return NULL to seal the deal [if there is a handler]) */
 					raise(SIGINT);
@@ -605,6 +633,9 @@ char *raw_input(raw_t *raw, char *prompt) {
 
 		/* redraw input */
 		_raw_redraw(raw, !move);
+
+		/* add current line status to temporary history */
+		_raw_hist_add_str(raw, raw->line->line->str);
 	} while(!enter);
 
 	/* disable raw mode */
@@ -612,6 +643,13 @@ char *raw_input(raw_t *raw, char *prompt) {
 
 	/* print the enter newline */
 	printf("\n");
+
+	/* free "temporary" history and point raw-> to it */
+	if(raw->settings->history) {
+		_raw_hist_free(raw->hist);
+		free(raw->hist);
+		raw->hist = hist;
+	}
 
 	/* copy over input to buffer */
 	free(raw->buffer);
