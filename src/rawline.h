@@ -39,6 +39,11 @@ typedef struct raw_t raw_t;
 raw_t *raw_new(char *);
 void raw_free(raw_t *);
 
+/* Set history, and add last input (or any arbitrary string) */
+void raw_hist(raw_t *, bool, int);
+void raw_hist_add(raw_t *);
+void raw_hist_add_str(raw_t *, char *);
+
 /* Returns a string taken from input, with emacs-like line editing (using give prompt). */
 char *raw_input(raw_t *, char*);
 #endif

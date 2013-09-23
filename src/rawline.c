@@ -32,6 +32,9 @@
 #	define assert(cond) do { if(!cond) { fprintf(stderr, "rawline: %s: condition '%s' failed\n", __func__, #cond); abort(); } } while(0)
 #endif
 
+/* Convert bool-ish ints to bools. */
+#define tobool(b) (!!b)
+
 /* VT100 control codes used by rawline. It is assumed the code using these printf-style
  * control code formats knows the amount of args (or things to be subbed in), so we don't
  * need to use functions for these. */
@@ -68,7 +71,17 @@ struct _raw_term {
 	struct termios original; /* original terminal settings */
 };
 
+struct _raw_hist {
+	char **history; /* entire history (stored in reverse, where history[0] is the latest history item) */
+	char *original; /* original input (position history[-1]) */
+
+	int len; /* size of history */
+	int max; /* maximum size of history */
+	int pos; /* current position in history (-1 if not in history) */
+};
+
 struct _raw_set {
+	bool history; /* is history enabled? */
 	/* ... */
 };
 
@@ -78,6 +91,7 @@ typedef struct raw_t {
 	struct _raw_line *line; /* current line state */
 	struct _raw_set *settings; /* settings of line editing */
 	struct _raw_term *term; /* terminal state / settings */
+	struct _raw_hist *hist; /* history data */
 
 	char *atexit; /* the line to return if input is abruptly exited (if NULL, delete current character [if possible] else return current input) */
 	char *buffer; /* "output buffer", used to hold latest line to keep all memory management in rawline */
@@ -93,6 +107,19 @@ enum {
 /* Static functions only used internally. These functions are never exposed outside of the library,
  * and are not required to be used by external programs. They should never be used by anything outside
  * of this library, because they contain very specific functionality not required for everyday use. */
+
+static char *_raw_strdup(char *str) {
+	if(!str)
+		return NULL;
+
+	int len = strlen(str);
+
+	char *ret = malloc(len + 1);
+	memcpy(ret, str, len);
+
+	ret[len] = '\0';
+	return ret;
+} /* _raw_strdup() */
 
 static void _raw_error(int err) {
 	switch(err) {
@@ -233,7 +260,7 @@ static int _raw_move_cur(raw_t *raw, int offset) {
 #define _raw_left(raw) _raw_move_cur(raw, -1)
 #define _raw_right(raw) _raw_move_cur(raw, 1)
 
-void _raw_redraw(raw_t *raw, bool change) {
+static void _raw_redraw(raw_t *raw, bool change) {
 	assert(raw->safe);
 
 	/* redraw input string */
@@ -248,31 +275,7 @@ void _raw_redraw(raw_t *raw, bool change) {
 	fflush(stdout);
 } /* _raw_redraw() */
 
-void _raw_set_buffer(raw_t *raw, char *str) {
-	int len = strlen(str);
-
-	raw->buffer = realloc(raw->buffer, len + 1);
-	memcpy(raw->buffer, str, len);
-
-	raw->buffer[len] = '\0';
-} /* _raw_set_buffer() */
-
-#define _raw_update_buffer(raw) _raw_set_buffer(raw, raw->line->line->str)
-
-char *_raw_strdup(char *str) {
-	if(!str)
-		return NULL;
-
-	int len = strlen(str);
-
-	char *ret = malloc(len + 1);
-	memcpy(ret, str, len);
-
-	ret[len] = '\0';
-	return ret;
-} /* _raw_strdup() */
-
-void _raw_set_line(raw_t *raw, char *str, int cursor) {
+static void _raw_set_line(raw_t *raw, char *str, int cursor) {
 	assert(raw->safe);
 
 	int len = strlen(str);
@@ -291,6 +294,78 @@ void _raw_set_line(raw_t *raw, char *str, int cursor) {
 		raw->line->cursor = 0;
 } /* _raw_set_line() */
 
+static void _raw_hist_free(raw_t *raw) {
+	assert(raw->safe);
+	assert(raw->settings->history);
+
+	int i;
+	for(i = 0; i < raw->hist->len; i++)
+		free(raw->hist->history[i]);
+
+	free(raw->hist->history);
+	raw->settings->history = false;
+
+	raw->hist->len = 0;
+	raw->hist->max = 0;
+} /* _raw_hist_free() */
+
+static void _raw_hist_add_str(raw_t *raw, char *str) {
+	assert(raw->safe);
+	assert(raw->settings->history);
+
+	/* A circular buffer would be the _correct_ way to implement this, however that
+	 * would unnecesarily complicate the code. Besides, memmove(3) is magical. */
+
+	/* free the last item in the history (if the history is full) */
+	if(raw->hist->len >= raw->hist->max)
+		free(raw->hist->history[raw->hist->max - 1]);
+
+	/* memmove(3) the entire history */
+	memmove(raw->hist->history + 1, raw->hist->history, sizeof(char *) * (raw->hist->max - 1));
+
+	/* add the item to the history */
+	raw->hist->history[0] = _raw_strdup(str);
+
+	/* update length */
+	raw->hist->len++;
+	if(raw->hist->len > raw->hist->max)
+		raw->hist->len = raw->hist->max;
+
+	raw->hist->pos = 0;
+} /* _raw_hist_add_str() */
+
+#define _RAW_HIST_PREV -1
+#define _RAW_HIST_NEXT 1
+
+static int _raw_hist_move(raw_t *raw, int move) {
+	assert(raw->safe);
+	assert(raw->settings->history);
+
+	/* movement is invalid if movement will be "out of bounds" on the array */
+	if(raw->hist->pos + move < -1 || raw->hist->pos + move >= raw->hist->len)
+		return BELL;
+
+	/* copy over the line */
+	if(raw->hist->pos < 0) {
+		free(raw->hist->original);
+		raw->hist->original = _raw_strdup(raw->line->line->str);
+	}
+
+	/* free current line data */
+	free(raw->line->line->str);
+	raw->hist->pos += move;
+
+	if(raw->hist->pos < 0)
+		/* get original line */
+		raw->line->line->str = _raw_strdup(raw->hist->original);
+	else
+		/* move position and copy over the history entry */
+		raw->line->line->str = _raw_strdup(raw->hist->history[raw->hist->pos]);
+
+	raw->line->line->len = strlen(raw->line->line->str);
+	return SUCCESS;
+} /* _raw_hist_move() */
+
 /* Functions exposed to external use. These functions are the only functions which outside programs
  * will ever need to use. They handle *ALL* memory management, and rawline structures aren't to be
  * allocated by the user and are opaque. */
@@ -304,20 +379,23 @@ raw_t *raw_new(char *atexit) {
 	raw->line->prompt = malloc(sizeof(struct _raw_str));
 	raw->line->line = malloc(sizeof(struct _raw_str));
 
-	/* malloc the line with "" */
-	raw->line->line->str = malloc(1);
-	raw->line->line->str[0] = '\0';
+	/* set the line to "" */
+	raw->line->line->str = _raw_strdup("");
 	raw->line->line->len = 0;
 	raw->line->cursor = 0;
 
 	/* set up standard settings */
 	raw->settings = malloc(sizeof(struct _raw_set));
+	raw->settings->history = false;
 
 	/* set up terminal settings */
 	raw->term = malloc(sizeof(struct _raw_term));
 	raw->term->fd = STDIN_FILENO;
 	raw->term->mode = false;
 	tcgetattr(0, &raw->term->original);
+
+	/* history is off by default */
+	raw->hist = NULL;
 
 	/* input needs to be from a terminal */
 	assert(isatty(raw->term->fd));
@@ -328,7 +406,46 @@ raw_t *raw_new(char *atexit) {
 	raw->atexit = _raw_strdup(atexit);
 
 	return raw;
-} /* raw_init() */
+} /* raw_new() */
+
+void raw_hist(raw_t *raw, bool set, int size) {
+	assert(raw->safe);
+	assert(raw->settings->history != tobool(set));
+
+	raw->settings->history = tobool(set);
+
+	if(set) {
+		raw->hist = malloc(sizeof(struct _raw_hist));
+		raw->hist->max = size;
+		raw->hist->len = 0;
+		raw->hist->pos = -1;
+
+		raw->hist->history = malloc(sizeof(char *) * raw->hist->max);
+		/*memset(raw->hist->history, 0, raw->hist->max);  fill with NULLs */
+
+		raw->hist->original = NULL;
+	}
+	else {
+		_raw_hist_free(raw);
+		free(raw->hist->original);
+		free(raw->hist);
+	}
+} /* raw_hist() */
+
+void raw_hist_add_str(raw_t *raw, char *str) {
+	assert(raw->safe);
+	assert(raw->settings->history);
+
+	_raw_hist_add_str(raw, str);
+} /* raw_hist_add_str() */
+
+void raw_hist_add(raw_t *raw) {
+	assert(raw->safe);
+	assert(raw->settings->history);
+	assert(raw->buffer);
+
+	_raw_hist_add_str(raw, raw->buffer);
+} /* raw_hist_add() */
 
 void raw_free(raw_t *raw) {
 	assert(raw->safe);
@@ -338,6 +455,13 @@ void raw_free(raw_t *raw) {
 	free(raw->line->line);
 	free(raw->line->prompt);
 	free(raw->line);
+
+	/* clear out history */
+	if(raw->settings->history) {
+		_raw_hist_free(raw);
+		free(raw->hist->original);
+		free(raw->hist);
+	}
 
 	/* clear out settings */
 	free(raw->settings);
@@ -357,8 +481,10 @@ void raw_free(raw_t *raw) {
 char *raw_input(raw_t *raw, char *prompt) {
 	assert(raw->safe);
 
-	/* erase old line */
+	/* erase old line information */
 	_raw_set_line(raw, "", 0);
+	if(raw->settings->history)
+		raw->hist->pos = -1;
 
 	/* get prompt string and print it */
 	raw->line->prompt->str = prompt;
@@ -379,7 +505,6 @@ char *raw_input(raw_t *raw, char *prompt) {
 		/* get first char */
 		char ch;
 		read(raw->term->fd, &ch, 1);
-
 
 		/* simple printable chars */
 		if(ch > 31 && ch < 127) {
@@ -434,6 +559,17 @@ char *raw_input(raw_t *raw, char *prompt) {
 									move = true;
 									err = _raw_right(raw);
 									break;
+								case 66: /* up arrow */
+								case 65: /* down arrow */
+									if(raw->settings->history) {
+										int dir = seq[1] == 66 ? _RAW_HIST_PREV : _RAW_HIST_NEXT;
+										err = _raw_hist_move(raw, dir);
+										raw->line->cursor = raw->line->line->len;
+									}
+									else {
+										err = BELL;
+									}
+									break;
 								case 49:
 								case 50:
 								case 51:
@@ -483,7 +619,8 @@ char *raw_input(raw_t *raw, char *prompt) {
 	printf("\n");
 
 	/* copy over input to buffer */
-	_raw_update_buffer(raw);
+	free(raw->buffer);
+	raw->buffer = _raw_strdup(raw->line->line->str);
 
 	/* return buffer */
 	return raw->buffer;

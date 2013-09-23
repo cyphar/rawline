@@ -28,15 +28,17 @@
 int main(void) {
 	raw_t *raw;
    	raw = raw_new("exit");
+	raw_hist(raw, true, 1000);
 
 	char *input = NULL;
 	do {
 
 		input = raw_input(raw, ">>> ");
 
-		if(strlen(input))
+		if(strlen(input)) {
 			printf("%s\n", input);
-
+			raw_hist_add(raw);
+		}
 	} while(strcmp(input, "exit"));
 
 	raw_free(raw);
