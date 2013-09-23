@@ -234,15 +234,18 @@ static int _raw_move_cur(raw_t *raw, int offset) {
 #define _raw_right(raw) _raw_move_cur(raw, 1)
 
 void _raw_redraw(raw_t *raw, bool change) {
-		if(change) {
-			printf(C_CUR_MOVE_COL, raw->line->prompt->len + 1);
-			printf(C_LN_CLEAR_END);
-			printf("%s", raw->line->line->str);
-		}
+	assert(raw->safe);
 
-		/* update the cursor position */
-		printf(C_CUR_MOVE_COL, raw->line->cursor + raw->line->prompt->len + 1);
-		fflush(stdout);
+	/* redraw input string */
+	if(change) {
+		printf(C_CUR_MOVE_COL, raw->line->prompt->len + 1);
+		printf(C_LN_CLEAR_END);
+		printf("%s", raw->line->line->str);
+	}
+
+	/* update the cursor position */
+	printf(C_CUR_MOVE_COL, raw->line->cursor + raw->line->prompt->len + 1);
+	fflush(stdout);
 } /* _raw_redraw() */
 
 void _raw_set_buffer(raw_t *raw, char *str) {
@@ -253,6 +256,8 @@ void _raw_set_buffer(raw_t *raw, char *str) {
 
 	raw->buffer[len] = '\0';
 } /* _raw_set_buffer() */
+
+#define _raw_update_buffer(raw) _raw_set_buffer(raw, raw->line->line->str)
 
 char *_raw_strdup(char *str) {
 	if(!str)
@@ -266,6 +271,25 @@ char *_raw_strdup(char *str) {
 	ret[len] = '\0';
 	return ret;
 } /* _raw_strdup() */
+
+void _raw_set_line(raw_t *raw, char *str, int cursor) {
+	assert(raw->safe);
+
+	int len = strlen(str);
+
+	/* copy over the string to line */
+	raw->line->line->str = realloc(raw->line->line->str, len + 1);
+	memcpy(raw->line->line->str, str, len);
+	raw->line->line->str[len] = '\0';
+
+	/* update len and cursor */
+	raw->line->line->len = len;
+	raw->line->cursor = cursor;
+
+	/* if the given cursor position is illogical, move it to start */
+	if(raw->line->cursor < 0 || raw->line->cursor > len)
+		raw->line->cursor = 0;
+} /* _raw_set_line() */
 
 /* Functions exposed to external use. These functions are the only functions which outside programs
  * will ever need to use. They handle *ALL* memory management, and rawline structures aren't to be
@@ -334,10 +358,7 @@ char *raw_input(raw_t *raw, char *prompt) {
 	assert(raw->safe);
 
 	/* erase old line */
-	raw->line->line->str = realloc(raw->line->line->str, 1);
-	raw->line->line->str[0] = '\0';
-	raw->line->line->len = 0;
-	raw->line->cursor = 0;
+	_raw_set_line(raw, "", 0);
 
 	/* get prompt string and print it */
 	raw->line->prompt->str = prompt;
@@ -364,9 +385,7 @@ char *raw_input(raw_t *raw, char *prompt) {
 		if(ch > 31 && ch < 127) {
 			err = _raw_insert(raw, ch);
 		}
-
 		else {
-
 			switch(ch) {
 				case 3: /* ctrl-c */
 					/* disable raw mode */
@@ -382,7 +401,8 @@ char *raw_input(raw_t *raw, char *prompt) {
 						_raw_mode(raw, false);
 
 						/* copy over abrupt input to buffer and redraw */
-						_raw_set_buffer(raw, raw->atexit);
+						_raw_set_line(raw, raw->atexit, 0);
+						_raw_update_buffer(raw);
 						_raw_redraw(raw, !move);
 
 						/* use given abrupt input */
@@ -472,7 +492,7 @@ char *raw_input(raw_t *raw, char *prompt) {
 	printf("\n");
 
 	/* copy over input to buffer */
-	_raw_set_buffer(raw, raw->line->line->str);
+	_raw_update_buffer(raw);
 
 	/* return buffer */
 	return raw->buffer;
