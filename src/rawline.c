@@ -42,14 +42,10 @@
 #define C_BELL				"\x7"
 
 /* direction(n) -> move by <n> steps in direction */
-#define C_CUR_FORWARD		"\x1b[%dC" /* CUF -- Move forward <n> */
-#define C_CUR_BACKWARD		"\x1b[%dD" /* CUB -- Move back <n> */
 #define C_CUR_MOVE_COL		"\x1b[%dG" /* CHA -- Move to absolute column <n> */
 
 /* clear() -> clear the line as specified */
 #define C_LN_CLEAR_END		"\x1b[0K" /* EL(0) -- Clear from cursor to EOL */
-#define C_LN_CLEAR_START	"\x1b[1K" /* EL(1) -- Clear from BOL to cursor */
-#define C_LN_CLEAR_LINE		"\x1b[2K" /* EL(2) -- Clear entire line */
 
 /* Structures used both externally and internally by rawline. External structures end with _t
  * and are typedef'd. Internal structures begin with a single '_' and aren't *ever* typedef'd. */
@@ -77,7 +73,7 @@ struct _raw_hist {
 
 	int len; /* size of history */
 	int max; /* maximum size of history */
-	int pos; /* current position in history (-1 if not in history) */
+	int index; /* history index of current line (-1 if line not in history) */
 };
 
 struct _raw_set {
@@ -320,18 +316,19 @@ static void _raw_hist_add_str(raw_t *raw, char *str) {
 	if(raw->hist->len >= raw->hist->max)
 		free(raw->hist->history[raw->hist->max - 1]);
 
-	/* memmove(3) the entire history */
-	memmove(raw->hist->history + 1, raw->hist->history, sizeof(char *) * (raw->hist->max - 1));
+	if(raw->hist->index < 0) {
+		/* memmove(3) the entire history */
+		memmove(raw->hist->history + 1, raw->hist->history, sizeof(char *) * (raw->hist->max - 1));
+		raw->hist->index++;
 
-	/* add the item to the history */
-	raw->hist->history[0] = _raw_strdup(str);
+		/* update length */
+		raw->hist->len++;
+		if(raw->hist->len > raw->hist->max)
+			raw->hist->len = raw->hist->max;
+	}
 
-	/* update length */
-	raw->hist->len++;
-	if(raw->hist->len > raw->hist->max)
-		raw->hist->len = raw->hist->max;
-
-	raw->hist->pos = 0;
+	/* modify (or add) history item */
+	raw->hist->history[raw->hist->index] = _raw_strdup(str);
 } /* _raw_hist_add_str() */
 
 #define _RAW_HIST_PREV 1
@@ -342,25 +339,25 @@ static int _raw_hist_move(raw_t *raw, int move) {
 	assert(raw->settings->history);
 
 	/* movement is invalid if movement will be "out of bounds" on the array */
-	if(raw->hist->pos + move < -1 || raw->hist->pos + move >= raw->hist->len)
+	if(raw->hist->index + move < -1 || raw->hist->index + move >= raw->hist->len)
 		return BELL;
 
-	/* copy over the line */
-	if(raw->hist->pos < 0) {
+	/* copy over the line before getting the history */
+	if(raw->hist->index < 0) {
 		free(raw->hist->original);
 		raw->hist->original = _raw_strdup(raw->line->line->str);
 	}
 
 	/* free current line data */
 	free(raw->line->line->str);
-	raw->hist->pos += move;
+	raw->hist->index += move;
 
-	if(raw->hist->pos < 0)
+	if(raw->hist->index < 0)
 		/* get original line */
 		raw->line->line->str = _raw_strdup(raw->hist->original);
 	else
 		/* move position and copy over the history entry */
-		raw->line->line->str = _raw_strdup(raw->hist->history[raw->hist->pos]);
+		raw->line->line->str = _raw_strdup(raw->hist->history[raw->hist->index]);
 
 	raw->line->line->len = strlen(raw->line->line->str);
 	return SUCCESS;
@@ -418,7 +415,7 @@ void raw_hist(raw_t *raw, bool set, int size) {
 		raw->hist = malloc(sizeof(struct _raw_hist));
 		raw->hist->max = size;
 		raw->hist->len = 0;
-		raw->hist->pos = -1;
+		raw->hist->index = -1;
 
 		raw->hist->history = malloc(sizeof(char *) * raw->hist->max);
 		raw->hist->original = NULL;
@@ -482,7 +479,7 @@ char *raw_input(raw_t *raw, char *prompt) {
 	/* erase old line information */
 	_raw_set_line(raw, "", 0);
 	if(raw->settings->history)
-		raw->hist->pos = -1;
+		raw->hist->index = -1;
 
 	/* get prompt string and print it */
 	raw->line->prompt->str = prompt;
