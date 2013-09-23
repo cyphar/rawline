@@ -76,9 +76,14 @@ struct _raw_hist {
 	int index; /* history index of current line (-1 if line not in history) */
 };
 
+struct _raw_comp {
+	char **(*callback)(char *input); /* a callback function to fill a search table for completion */
+	void (*cleanup)(char **table); /* optional cleanup function to free memory given from output of callback() */
+};
+
 struct _raw_set {
 	bool history; /* is history enabled? */
-	/* ... */
+	bool completion; /* is completion enabled? */
 };
 
 struct raw_t {
@@ -88,6 +93,7 @@ struct raw_t {
 	struct _raw_set *settings; /* settings of line editing */
 	struct _raw_term *term; /* terminal state / settings */
 	struct _raw_hist *hist; /* history data */
+	struct _raw_comp *comp; /* completion data */
 
 	char *atexit; /* the line to return if input is abruptly exited (if NULL, delete current character [if possible] else return current input) */
 	char *buffer; /* "output buffer", used to hold latest line to keep all memory management in rawline */
@@ -163,6 +169,8 @@ static void _raw_mode(raw_t *raw, bool state) {
 	tcsetattr(0, TCSAFLUSH, &new);
 	raw->term->mode = state;
 } /* _raw_mode() */
+
+/* == Line Editing == */
 
 static int _raw_del_char(raw_t *raw) {
 	assert(raw->safe);
@@ -271,6 +279,8 @@ static void _raw_redraw(raw_t *raw, bool change) {
 	fflush(stdout);
 } /* _raw_redraw() */
 
+/* == History == */
+
 static struct _raw_hist *_raw_hist_new(int size) {
 	struct _raw_hist *hist = malloc(sizeof(struct _raw_hist));
 
@@ -378,6 +388,79 @@ static int _raw_hist_move(raw_t *raw, int move) {
 	return SUCCESS;
 } /* _raw_hist_move() */
 
+/* == Completion == */
+
+static char *_raw_comp_get(raw_t *raw, char *str) {
+	assert(raw->safe);
+	assert(raw->settings->completion);
+	assert(raw->comp->callback);
+
+	/* get search table */
+	char **table = raw->comp->callback(str);
+	char **search = NULL;
+
+	/* filter table with string */
+	int i, searchlen = 0, lenstr = strlen(str);
+	for(i = 0; table[i] != NULL; i++) {
+		if(!strncmp(str, table[i], lenstr)) {
+			searchlen++;
+
+			search = realloc(search, searchlen * sizeof(char *));
+			search[searchlen-1] = _raw_strdup(table[i]);
+		}
+	}
+
+	/* null terminate list */
+	search = realloc(search, ++searchlen * sizeof(char *));
+	search[searchlen - 1] = NULL;
+
+	/* no matches for input */
+	if(searchlen < 2) {
+		int i;
+		for(i = 0; i < searchlen; i++)
+			free(search[i]);
+		free(search);
+		return _raw_strdup(str);
+	}
+
+	/* output comparison */
+	char *comp = NULL;
+	bool same = true;
+	int complen = 0, j = 0;
+
+	do {
+		char ch = search[0][j];
+
+		comp = realloc(comp, complen + 1);
+		comp[complen] = ch;
+		complen++;
+
+		int i;
+		for(i = 1; search[i] != NULL && same; i++)
+			if(ch != search[i][j])
+				same = false;
+
+		if(!ch)
+			break;
+
+		j++;
+	} while(same);
+
+	/* null terminate */
+	comp[complen - 1] = '\0';
+
+	/* call cleanup function (if defined) */
+	if(raw->comp->cleanup)
+		raw->comp->cleanup(table);
+
+	/* clean up search table */
+	for(i = 0; search[i] != NULL; i++)
+		free(search[i]);
+	free(search);
+
+	return comp;
+} /* _raw_comp_get() */
+
 /* Functions exposed to external use. These functions are the only functions which outside programs
  * will ever need to use. They handle *ALL* memory management, and rawline structures aren't to be
  * allocated by the user and are opaque. */
@@ -399,6 +482,7 @@ raw_t *raw_new(char *atexit) {
 	/* set up standard settings */
 	raw->settings = malloc(sizeof(struct _raw_set));
 	raw->settings->history = false;
+	raw->settings->completion = false;
 
 	/* set up terminal settings */
 	raw->term = malloc(sizeof(struct _raw_term));
@@ -408,6 +492,9 @@ raw_t *raw_new(char *atexit) {
 
 	/* history is off by default */
 	raw->hist = NULL;
+
+	/* completion is off by default */
+	raw->comp = NULL;
 
 	/* input needs to be from a terminal */
 	assert(isatty(raw->term->fd));
@@ -430,7 +517,6 @@ void raw_hist(raw_t *raw, bool set, int size) {
 		raw->hist = _raw_hist_new(size);
 	}
 	else {
-		raw->settings->history = false;
 		_raw_hist_free(raw->hist);
 		free(raw->hist);
 	}
@@ -451,6 +537,22 @@ void raw_hist_add(raw_t *raw) {
 	_raw_hist_add_str(raw, raw->buffer);
 } /* raw_hist_add() */
 
+void raw_comp(raw_t *raw, bool set, char **(*callback)(char *), void (*cleanup)(char **)) {
+	assert(raw->safe);
+	assert(raw->settings->completion != tobool(set));
+
+	raw->settings->completion = tobool(set);
+
+	if(set) {
+		raw->comp = malloc(sizeof(struct _raw_comp));
+		raw->comp->callback = callback;
+		raw->comp->cleanup = cleanup;
+	}
+	else {
+		free(raw->comp);
+	}
+} /* raw_comp() */
+
 void raw_free(raw_t *raw) {
 	assert(raw->safe);
 
@@ -466,6 +568,10 @@ void raw_free(raw_t *raw) {
 		_raw_hist_free(raw->hist);
 		free(raw->hist);
 	}
+
+	/* clear out completion */
+	if(raw->settings->completion)
+		free(raw->comp);
 
 	/* clear out settings */
 	free(raw->settings);
@@ -554,6 +660,25 @@ char *raw_input(raw_t *raw, char *prompt) {
 						/* cursor is at end, act like an enter */
 						enter = true;
 					break;
+				case 9: /* tab */
+					if(raw->settings->completion) {
+						char *comp = _raw_comp_get(raw, raw->line->line->str);
+
+						if(!strcmp(comp, raw->line->line->str)) {
+							err = BELL;
+						}
+
+						else {
+							_raw_set_line(raw, comp, 0);
+							raw->line->cursor = raw->line->line->len;
+						}
+
+						free(comp);
+					}
+					else {
+						err = BELL;
+					}
+					break;
 				case 13: /* enter */
 					enter = true;
 					break;
@@ -586,6 +711,7 @@ char *raw_input(raw_t *raw, char *prompt) {
 								case 66: /* down arrow */
 									if(raw->settings->history) {
 										int dir = seq[1] == 65 ? _RAW_HIST_PREV : _RAW_HIST_NEXT;
+
 										err = _raw_hist_move(raw, dir);
 										raw->line->cursor = raw->line->line->len;
 									}

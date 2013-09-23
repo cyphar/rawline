@@ -44,6 +44,9 @@ void raw_hist(raw_t *, bool, int);
 void raw_hist_add(raw_t *);
 void raw_hist_add_str(raw_t *, char *);
 
+/* Set completion (including callback) */
+void raw_comp(raw_t *, bool, char **(*callback)(char *), void (*cleanup)(char **));
+
 /* Returns a string taken from input, with emacs-like line editing (using give prompt). */
 char *raw_input(raw_t *, char*);
 #endif
