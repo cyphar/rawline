@@ -98,7 +98,7 @@ static int _raw_del_char(raw_t *raw) {
 
 	/* deletion is invalid if there is no input string
 	 * or the cursor is past the end of the input */
-	if(!raw->line->line->len || raw->line->cursor > raw->line->line->len)
+	if(!raw->line->line->len || raw->line->cursor >= raw->line->line->len)
 		return BELL;
 
 	/* update len and make shorthand variables */
@@ -117,6 +117,9 @@ static int _raw_del_char(raw_t *raw) {
 	raw->line->line->str = realloc(raw->line->line->str, len + 1);
 	memcpy(raw->line->line->str, cpy, len + 1);
 	free(cpy);
+
+	if(raw->line->cursor > raw->line->line->len)
+		raw->line->cursor = raw->line->line->len;
 
 	return SUCCESS;
 } /* _raw_del_char() */
@@ -285,6 +288,7 @@ char *raw_input(raw_t *raw) {
 				enter = true;
 				break;
 			case 127:
+			case 8:
 				/* backspace */
 				err = raw_backspace(raw);
 				break;

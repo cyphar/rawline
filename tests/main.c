@@ -21,6 +21,8 @@
  */
 
 #include <stdio.h>
+#include <string.h>
+
 #include "rawline.h"
 
 char *py_prompt(void) {
@@ -31,8 +33,13 @@ int main(void) {
 	raw_t raw;
 	raw_init(&raw, py_prompt);
 
-	while(true)
-		printf("%s\n", raw_input(&raw));
+	char *input = NULL;
+	do {
+		input = raw_input(&raw);
+
+		if(strlen(input))
+			printf("%s\n", input);
+	} while(strcmp(input, "exit"));
 
 	raw_free(&raw);
 	return 0;

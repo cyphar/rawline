@@ -34,5 +34,8 @@ CFLAGS		?= -ansi -I$(INCLUDE_DIR)/
 LFLAGS		?=
 WARNINGS	?= -Wall -Wextra -Werror
 
-test: $(SRC) $(INCLUDE) $(TEST)
+$(NAME): $(SRC) $(INCLUDE) $(TEST)
 	$(CC) $(CFLAGS) $(SRC) $(TEST) $(LFLAGS) $(WARNINGS) -o $(NAME)
+
+debug: $(SRC) $(INCLUDE) $(TEST)
+	$(CC) $(CFLAGS) -g -O0 $(SRC) $(TEST) $(LFLAGS) $(WARNINGS) -o $(NAME)
