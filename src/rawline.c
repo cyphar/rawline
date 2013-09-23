@@ -391,29 +391,20 @@ char *raw_input(raw_t *raw, char *prompt) {
 					/* disable raw mode */
 					_raw_mode(raw, false);
 
-					/* raise the correct error (return NULL to seal the deal) */
+					/* raise the expected signal (return NULL to seal the deal [if there is a handler]) */
 					raise(SIGINT);
 					return NULL;
 				case 4: /* ctrl-d */
-
 					if(raw->atexit) {
-						/* disable raw mode and redraw input */
-						_raw_mode(raw, false);
-
-						/* copy over abrupt input to buffer and redraw */
+						/* copy over abrupt input and act as enter */
 						_raw_set_line(raw, raw->atexit, 0);
-						_raw_update_buffer(raw);
-						_raw_redraw(raw, !move);
+						enter = true;
+					}
 
-						/* use given abrupt input */
-						return raw->buffer;
-					}
-					else {
-						/* act as combined delete and enter */
-						if(_raw_del_char(raw) != SUCCESS)
-							/* cursor is at end, act like an enter */
-							enter = true;
-					}
+					/* act as combined delete and enter */
+					else if(_raw_del_char(raw) != SUCCESS)
+						/* cursor is at end, act like an enter */
+						enter = true;
 					break;
 				case 13: /* enter */
 					enter = true;
