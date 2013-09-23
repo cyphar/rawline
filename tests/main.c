@@ -30,17 +30,17 @@ char *py_prompt(void) {
 } /* py_prompt() */
 
 int main(void) {
-	raw_t raw;
-	raw_init(&raw, py_prompt);
+	raw_t *raw;
+   	raw = raw_new(py_prompt);
 
 	char *input = NULL;
 	do {
-		input = raw_input(&raw);
+		input = raw_input(raw);
 
 		if(strlen(input))
 			printf("%s\n", input);
 	} while(strcmp(input, "exit"));
 
-	raw_free(&raw);
+	raw_free(raw);
 	return 0;
 } /* main() */
