@@ -79,7 +79,7 @@ typedef struct raw_t {
 	struct _raw_set *settings; /* settings of line editing */
 	struct _raw_term *term; /* terminal state / settings */
 
-	char *(*prompt)(void); /* function which returns null-terminated prompt string */
+	char *atexit; /* the line to return if input is abruptly exited (if NULL, delete current character [if possible] else return current input) */
 	char *buffer; /* "output buffer", used to hold latest line to keep all memory management in rawline */
 } raw_t;
 
@@ -233,11 +233,45 @@ static int _raw_move_cur(raw_t *raw, int offset) {
 #define _raw_left(raw) _raw_move_cur(raw, -1)
 #define _raw_right(raw) _raw_move_cur(raw, 1)
 
+void _raw_redraw(raw_t *raw, bool change) {
+		if(change) {
+			printf(C_CUR_MOVE_COL, raw->line->prompt->len + 1);
+			printf(C_LN_CLEAR_END);
+			printf("%s", raw->line->line->str);
+		}
+
+		/* update the cursor position */
+		printf(C_CUR_MOVE_COL, raw->line->cursor + raw->line->prompt->len + 1);
+		fflush(stdout);
+} /* _raw_redraw() */
+
+void _raw_set_buffer(raw_t *raw, char *str) {
+	int len = strlen(str);
+
+	raw->buffer = realloc(raw->buffer, len + 1);
+	memcpy(raw->buffer, str, len);
+
+	raw->buffer[len] = '\0';
+} /* _raw_set_buffer() */
+
+char *_raw_strdup(char *str) {
+	if(!str)
+		return NULL;
+
+	int len = strlen(str);
+
+	char *ret = malloc(len + 1);
+	memcpy(ret, str, len);
+
+	ret[len] = '\0';
+	return ret;
+} /* _raw_strdup() */
+
 /* Functions exposed to external use. These functions are the only functions which outside programs
  * will ever need to use. They handle *ALL* memory management, and rawline structures aren't to be
  * allocated by the user and are opaque. */
 
-raw_t *raw_new(char *(*prompt)(void)) {
+raw_t *raw_new(char *atexit) {
 	/* alloc main structure */
 	raw_t *raw = malloc(sizeof(raw_t));
 
@@ -245,14 +279,6 @@ raw_t *raw_new(char *(*prompt)(void)) {
 	raw->line = malloc(sizeof(struct _raw_line));
 	raw->line->prompt = malloc(sizeof(struct _raw_str));
 	raw->line->line = malloc(sizeof(struct _raw_str));
-
-	raw->line->prompt->str = prompt();
-
-	/* no prompt? set it to "" */
-	if(!raw->line->prompt->str)
-		raw->line->prompt->str = "";
-
-	raw->line->prompt->len = strlen(raw->line->prompt->str);
 
 	/* malloc the line with "" */
 	raw->line->line->str = malloc(1);
@@ -274,8 +300,8 @@ raw_t *raw_new(char *(*prompt)(void)) {
 
 	/* everything else */
 	raw->buffer = NULL;
-	raw->prompt = prompt;
 	raw->safe = true;
+	raw->atexit = _raw_strdup(atexit);
 
 	return raw;
 } /* raw_init() */
@@ -297,14 +323,14 @@ void raw_free(raw_t *raw) {
 
 	/* clear out everything else */
 	free(raw->buffer);
-	raw->prompt = NULL;
+	free(raw->atexit);
 	raw->safe = false;
 
 	/* finally, free the structure itself */
 	free(raw);
 } /* raw_free() */
 
-char *raw_input(raw_t *raw) {
+char *raw_input(raw_t *raw, char *prompt) {
 	assert(raw->safe);
 
 	/* erase old line */
@@ -314,7 +340,7 @@ char *raw_input(raw_t *raw) {
 	raw->line->cursor = 0;
 
 	/* get prompt string and print it */
-	raw->line->prompt->str = raw->prompt();
+	raw->line->prompt->str = prompt;
 	raw->line->prompt->len = strlen(raw->line->prompt->str);
 
 	printf("%s", raw->line->prompt->str);
@@ -350,9 +376,24 @@ char *raw_input(raw_t *raw) {
 					raise(SIGINT);
 					return NULL;
 				case 4: /* ctrl-d */
-					/* for now, act as combined delete and enter */
-					if(_raw_del_char(raw) != SUCCESS)
-						enter = true;
+
+					if(raw->atexit) {
+						/* disable raw mode and redraw input */
+						_raw_mode(raw, false);
+
+						/* copy over abrupt input to buffer and redraw */
+						_raw_set_buffer(raw, raw->atexit);
+						_raw_redraw(raw, !move);
+
+						/* use given abrupt input */
+						return raw->buffer;
+					}
+					else {
+						/* act as combined delete and enter */
+						if(_raw_del_char(raw) != SUCCESS)
+							/* cursor is at end, act like an enter */
+							enter = true;
+					}
 					break;
 				case 13: /* enter */
 					enter = true;
@@ -420,15 +461,8 @@ char *raw_input(raw_t *raw) {
 			continue;
 		}
 
-		if(!move) {
-			printf(C_CUR_MOVE_COL, raw->line->prompt->len + 1);
-			printf(C_LN_CLEAR_END);
-			printf("%s", raw->line->line->str);
-		}
-
-		/* update the cursor position */
-		printf(C_CUR_MOVE_COL, raw->line->cursor + raw->line->prompt->len + 1);
-		fflush(stdout);
+		/* redraw input */
+		_raw_redraw(raw, !move);
 	} while(!enter);
 
 	/* disable raw mode */
@@ -438,10 +472,7 @@ char *raw_input(raw_t *raw) {
 	printf("\n");
 
 	/* copy over input to buffer */
-	int len = raw->line->line->len;
-	raw->buffer = realloc(raw->buffer, len + 1);
-	memcpy(raw->buffer, raw->line->line->str, len);
-	raw->buffer[len] = '\0';
+	_raw_set_buffer(raw, raw->line->line->str);
 
 	/* return buffer */
 	return raw->buffer;

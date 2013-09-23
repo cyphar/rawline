@@ -36,9 +36,9 @@
 typedef struct raw_t raw_t;
 
 /* Create new and free raw_t structures. */
-raw_t *raw_new(char *(*)(void));
+raw_t *raw_new(char *);
 void raw_free(raw_t *);
 
-/* Returns a string taken from input, with emacs-like line editing. */
-char *raw_input(raw_t *);
+/* Returns a string taken from input, with emacs-like line editing (using give prompt). */
+char *raw_input(raw_t *, char*);
 #endif

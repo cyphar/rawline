@@ -25,20 +25,18 @@
 
 #include "rawline.h"
 
-char *py_prompt(void) {
-	return ">>> ";
-} /* py_prompt() */
-
 int main(void) {
 	raw_t *raw;
-   	raw = raw_new(py_prompt);
+   	raw = raw_new("exit");
 
 	char *input = NULL;
 	do {
-		input = raw_input(raw);
+
+		input = raw_input(raw, ">>> ");
 
 		if(strlen(input))
 			printf("%s\n", input);
+
 	} while(strcmp(input, "exit"));
 
 	raw_free(raw);
