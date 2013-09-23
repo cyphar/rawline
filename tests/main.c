@@ -21,14 +21,54 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "rawline.h"
+
+#define len(x) (int) (sizeof(x) / sizeof(*x))
+
+char **callback(char *str) {
+	char *table[] = {
+		"hello",
+		"hxllo",
+		"this is a",
+		"this is a test",
+		NULL
+	};
+
+	if(!strcmp(str, "helll"))
+		table[0] = "helllo";
+
+	char **ret = malloc(sizeof(char *) * len(table));
+
+	int i;
+	for(i = 0; i < len(table); i++) {
+		if(table[i]) {
+			ret[i] = malloc(strlen(table[i]) + 1);
+			strcpy(ret[i], table[i]);
+		}
+		else {
+			ret[i] = NULL;
+		}
+	}
+
+	return ret;
+} /* callback() */
+
+void cleanup(char **table) {
+	int i;
+	for(i = 0; table[i] != NULL; i++)
+		free(table[i]);
+
+	free(table);
+} /* cleanup() */
 
 int main(void) {
 	raw_t *raw;
    	raw = raw_new("exit");
 	raw_hist(raw, true, 1000);
+	raw_comp(raw, true, callback, cleanup);
 
 	char *input = NULL;
 	do {

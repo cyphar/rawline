@@ -6,5 +6,6 @@ A small line editing library, intended to replace libedit and readline.
 Features
 ========
 
-* Emacs-like line editing
-* History (w/ mutable entries)
+* Line editing (emacs-like)
+* History (bash-like)
+* Line completion (bash-like)
