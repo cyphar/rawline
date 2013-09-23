@@ -334,8 +334,8 @@ static void _raw_hist_add_str(raw_t *raw, char *str) {
 	raw->hist->pos = 0;
 } /* _raw_hist_add_str() */
 
-#define _RAW_HIST_PREV -1
-#define _RAW_HIST_NEXT 1
+#define _RAW_HIST_PREV 1
+#define _RAW_HIST_NEXT -1
 
 static int _raw_hist_move(raw_t *raw, int move) {
 	assert(raw->safe);
@@ -421,8 +421,6 @@ void raw_hist(raw_t *raw, bool set, int size) {
 		raw->hist->pos = -1;
 
 		raw->hist->history = malloc(sizeof(char *) * raw->hist->max);
-		/*memset(raw->hist->history, 0, raw->hist->max);  fill with NULLs */
-
 		raw->hist->original = NULL;
 	}
 	else {
@@ -559,10 +557,10 @@ char *raw_input(raw_t *raw, char *prompt) {
 									move = true;
 									err = _raw_right(raw);
 									break;
-								case 66: /* up arrow */
-								case 65: /* down arrow */
+								case 65: /* up arrow */
+								case 66: /* down arrow */
 									if(raw->settings->history) {
-										int dir = seq[1] == 66 ? _RAW_HIST_PREV : _RAW_HIST_NEXT;
+										int dir = seq[1] == 65 ? _RAW_HIST_PREV : _RAW_HIST_NEXT;
 										err = _raw_hist_move(raw, dir);
 										raw->line->cursor = raw->line->line->len;
 									}
