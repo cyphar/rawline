@@ -22,6 +22,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
 #include <string.h>
 
 #include "rawline.h"
@@ -60,8 +62,14 @@ struct _raw_line {
 	int cursor; /* cursor position in line (relative to end of prompt) */
 };
 
-struct _raw_set {
+struct _raw_term {
+	int fd; /* terminal file descriptor */
+	bool mode; /* is the terminal in raw mode? */
 	struct termios original; /* original terminal settings */
+};
+
+struct _raw_set {
+	/* ... */
 };
 
 typedef struct raw_t {
@@ -69,6 +77,7 @@ typedef struct raw_t {
 
 	struct _raw_line *line; /* current line state */
 	struct _raw_set *settings; /* settings of line editing */
+	struct _raw_term *term; /* terminal state / settings */
 
 	char *(*prompt)(void); /* function which returns null-terminated prompt string */
 	char *buffer; /* "output buffer", used to hold latest line to keep all memory management in rawline */
@@ -97,21 +106,39 @@ static void _raw_error(int err) {
 	}
 } /* _raw_error() */
 
-static void _raw_mode(raw_t *raw, bool enable) {
+/* Raw mode is a mode where the terminal will give EVERY character with 0 timeout, no buffering and no
+ * console output. It also disables signal characters, the conversion of characters or output control.
+ * Essentially, undo all of the hard work of terminal developers and send the terminal back in time,
+ * to the 1960s. ;) */
+
+static void _raw_mode(raw_t *raw, bool state) {
 	assert(raw->safe);
 
 	/* get original settings */
 	struct termios new;
-	new = raw->settings->original;
+	new = raw->term->original;
 
-	if(enable) {
-		/* disable buffered io and echo */
-		new.c_lflag &= ~ICANON;
-		new.c_lflag &= ~ECHO;
+	if(state) {
+		/* input modes: disable(break | CR to NL | parity | strip | control) */
+		new.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+
+		/* output modes: disable(post processing) */
+		new.c_oflag &= ~OPOST;
+
+		/* control modes: enable(8bit chars) */
+		new.c_cflag |= CS8;
+
+		/* local modes: disable(echoing | buffered io | extended functions | signals) */
+		new.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+
+		/* control chars: ensure that we get *every* byte, with no timeout. waiting is for suckers. */
+		new.c_cc[VMIN] = 1; /* one char only */
+		new.c_cc[VTIME] = 0; /* don't wait */
 	}
 
-	/* set new settings */
-	tcsetattr(0, TCSANOW, &new);
+	/* set new settings and flush out terminal */
+	tcsetattr(0, TCSAFLUSH, &new);
+	raw->term->mode = state;
 } /* _raw_mode() */
 
 static int _raw_del_char(raw_t *raw) {
@@ -235,7 +262,15 @@ raw_t *raw_new(char *(*prompt)(void)) {
 
 	/* set up standard settings */
 	raw->settings = malloc(sizeof(struct _raw_set));
-	tcgetattr(0, &raw->settings->original);
+
+	/* set up terminal settings */
+	raw->term = malloc(sizeof(struct _raw_term));
+	raw->term->fd = STDIN_FILENO;
+	raw->term->mode = false;
+	tcgetattr(0, &raw->term->original);
+
+	/* input needs to be from a terminal */
+	assert(isatty(raw->term->fd));
 
 	/* everything else */
 	raw->buffer = NULL;
@@ -256,6 +291,9 @@ void raw_free(raw_t *raw) {
 
 	/* clear out settings */
 	free(raw->settings);
+
+	/* clear out terminal settings */
+	free(raw->term);
 
 	/* clear out everything else */
 	free(raw->buffer);
@@ -278,7 +316,9 @@ char *raw_input(raw_t *raw) {
 	/* get prompt string and print it */
 	raw->line->prompt->str = raw->prompt();
 	raw->line->prompt->len = strlen(raw->line->prompt->str);
+
 	printf("%s", raw->line->prompt->str);
+	fflush(stdout);
 
 	/* set up state */
 	int enter = false;
@@ -287,8 +327,12 @@ char *raw_input(raw_t *raw) {
 	_raw_mode(raw, true);
 
 	do {
-		char ch = getchar();
 		int err = SUCCESS, move = false;
+
+		/* get first char */
+		char ch;
+		read(raw->term->fd, &ch, 1);
+
 
 		/* simple printable chars */
 		if(ch > 31 && ch < 127) {
@@ -298,22 +342,34 @@ char *raw_input(raw_t *raw) {
 		else {
 
 			switch(ch) {
-				case '\n':
+				case 3: /* ctrl-c */
+					/* disable raw mode */
+					_raw_mode(raw, false);
+
+					/* raise the correct error (return NULL to seal the deal) */
+					raise(SIGINT);
+					return NULL;
+				case 4: /* ctrl-d */
+					/* for now, act as combined delete and enter */
+					if(_raw_del_char(raw) != SUCCESS)
+						enter = true;
+					break;
+				case 13: /* enter */
 					enter = true;
 					break;
-				case 127:
-				case 8:
-					/* backspace */
+				case 127: /* ctrl-h (sometimes used as backspace) */
+				case 8: /* backspace */
 					err = _raw_backspace(raw);
 					break;
-				case 27:
-					/* escape sequence */
+				case 27: /* escape (start of sequence) */
 					{
+						/* get next two chars from the sequence */
 						char seq[2];
-						seq[0] = getchar();
-						seq[1] = getchar();
+						if(read(raw->term->fd, seq, 2) < 0)
+							/* no extra characters */
+							break;
 
-						/* valid start sequence*/
+						/* valid start of escape sequence */
 						if(seq[0] == 91) {
 							switch(seq[1]) {
 								case 68:
@@ -326,11 +382,22 @@ char *raw_input(raw_t *raw) {
 									move = true;
 									err = _raw_right(raw);
 									break;
+								case 49:
+								case 50:
 								case 51:
-									/* extended */
+								case 52:
+								case 53:
+								case 54:
+									/* extended escape */
 									{
-										char eseq = getchar();
-										if(eseq == 126)
+										/* read next two byes of extended escape sequence */
+										char eseq[2];
+										if(read(raw->term->fd, eseq, 2) < 0)
+											/* no extra characters */
+											break;
+
+										if(seq[1] == 51 && eseq[0] == 126)
+											/* delete */
 											err = _raw_delete(raw);
 									}
 									break;
@@ -347,7 +414,7 @@ char *raw_input(raw_t *raw) {
 			}
 		}
 
-		/* was there an error? if so, act on it */
+		/* was there an error? if so, act on it and don't update anything */
 		if(err != SUCCESS) {
 			_raw_error(err);
 			continue;
@@ -364,10 +431,11 @@ char *raw_input(raw_t *raw) {
 		fflush(stdout);
 	} while(!enter);
 
-	printf("\n");
-
 	/* disable raw mode */
 	_raw_mode(raw, false);
+
+	/* print the enter newline */
+	printf("\n");
 
 	/* copy over input to buffer */
 	int len = raw->line->line->len;
