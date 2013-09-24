@@ -789,7 +789,8 @@ char *raw_input(raw_t *raw, char *prompt) {
 		_raw_redraw(raw, !move);
 
 		/* add current line status to temporary history */
-		_raw_hist_add_str(raw, raw->line->line->str);
+		if(raw->hist->index >= 0)
+			_raw_hist_add_str(raw, raw->line->line->str);
 	} while(!enter);
 
 	/* disable raw mode */
