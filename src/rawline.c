@@ -386,7 +386,7 @@ static int _raw_hist_move(raw_t *raw, int move) {
 
 /* == Completion == */
 
-static char *_raw_comp_get(raw_t *raw, char *str) {
+static char **_raw_comp_filter(raw_t *raw, char *str) {
 	assert(raw->safe);
 	assert(raw->settings->completion);
 	assert(raw->comp->callback);
@@ -412,12 +412,24 @@ static char *_raw_comp_get(raw_t *raw, char *str) {
 	search = realloc(search, ++searchlen * sizeof(char *));
 	search[searchlen - 1] = NULL;
 
-	/* no matches for input */
-	if(searchlen < 2) {
-		int i;
-		for(i = 0; i < searchlen; i++)
-			free(search[i]);
+	/* call cleanup function (if defined) */
+	if(raw->comp->cleanup)
+		raw->comp->cleanup(table);
 
+	return search;
+} /* _raw_comp_filter() */
+
+static char *_raw_comp_get(raw_t *raw, char *str) {
+	assert(raw->safe);
+	assert(raw->settings->completion);
+
+	char **search = _raw_comp_filter(raw, str);
+
+	/* no matches for input */
+	if(search[0] == NULL) {
+		int i;
+		for(i = 0; search[i] != NULL; i++)
+			free(search[i]);
 		free(search);
 
 		/* return original string, since there are no matches */
@@ -428,6 +440,11 @@ static char *_raw_comp_get(raw_t *raw, char *str) {
 	char *comp = NULL;
 	bool same = true;
 	int complen = 0, j = 0;
+
+
+	/* Get the largest common "prefix" for the entire search table. This
+	 * is to mimic the bash-like completion, where the longest common prefix
+	 * is matched, and the rest is left to the user. */
 
 	do {
 		char ch = search[0][j];
@@ -454,21 +471,19 @@ static char *_raw_comp_get(raw_t *raw, char *str) {
 	/* null terminate */
 	comp[complen - 1] = '\0';
 
-	/* call cleanup function (if defined) */
-	if(raw->comp->cleanup)
-		raw->comp->cleanup(table);
-
 	/* clean up search table */
+	int i;
 	for(i = 0; search[i] != NULL; i++)
 		free(search[i]);
-
 	free(search);
+
+	/* give prefix */
 	return comp;
 } /* _raw_comp_get() */
 
-/* Functions exposed to external use. These functions are the only functions which outside programs
- * will ever need to use. They handle *ALL* memory management, and rawline structures aren't to be
- * allocated by the user and are opaque. */
+/* Functions exposed as an API, for external use. These functions are the only functions which outside
+ * programs will ever need to use. They handle *ALL* memory management, and rawline structures aren't
+ * to be allocated by the user and are opaque. */
 
 raw_t *raw_new(char *atexit) {
 	/* alloc main structure */
