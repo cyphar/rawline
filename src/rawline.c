@@ -758,6 +758,14 @@ char *raw_input(raw_t *raw, char *prompt) {
 											err = _raw_delete(raw);
 									}
 									break;
+								case 70: /* end */
+									raw->line->cursor = raw->line->line->len;
+									move = true;
+									break;
+								case 72: /* home */
+									raw->line->cursor = 0;
+									move = true;
+									break;
 								default:
 									err = BELL;
 									break;
