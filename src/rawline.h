@@ -40,12 +40,12 @@ raw_t *raw_new(char *);
 void raw_free(raw_t *);
 
 /* Set history, and add last input (or any arbitrary string) */
-void raw_hist(raw_t *, bool, int);
+int raw_hist(raw_t *, bool, int); /* returns a negative int if an error occured */
 void raw_hist_add(raw_t *);
 void raw_hist_add_str(raw_t *, char *);
 
 /* Set completion (including callback) */
-void raw_comp(raw_t *, bool, char **(*callback)(char *), void (*cleanup)(char **));
+int raw_comp(raw_t *, bool, char **(*callback)(char *), void (*cleanup)(char **)); /* returns a negative int if an error occured */
 
 /* Returns a string taken from input, with emacs-like line editing (using give prompt). */
 char *raw_input(raw_t *, char*);

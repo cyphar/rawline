@@ -285,6 +285,8 @@ static struct _raw_hist *_raw_hist_new(int size) {
 	hist->index = -1;
 
 	hist->history = malloc(sizeof(char *) * hist->max);
+	memset(hist->history, 0, sizeof(char *) * hist->max);
+
 	hist->original = NULL;
 
 	return hist;
@@ -311,7 +313,7 @@ static void _raw_set_line(raw_t *raw, char *str, int cursor) {
 
 static void _raw_hist_free(struct _raw_hist *hist) {
 	int i;
-	for(i = 0; i < hist->len; i++)
+	for(i = 0; i < hist->max; i++)
 		free(hist->history[i]);
 
 	free(hist->history);
@@ -326,17 +328,16 @@ static void _raw_hist_add_str(raw_t *raw, char *str) {
 	assert(raw->safe, "raw_t structure not allocated");
 	assert(raw->settings->history, "raw_t history not enabled");
 
-	/* A circular buffer would be the _correct_ way to implement this, however that
-	 * would unnecesarily complicate the code. Besides, memmove(3) is magical. */
-
-	/* free the last item in the history (if the history is full) */
-	if(raw->hist->len >= raw->hist->max)
-		free(raw->hist->history[raw->hist->max - 1]);
+	/* This sentence explans the next section of code: "memmove(3) is magical". */
 
 	if(raw->hist->index < 0) {
+		/* free the last item in the history (if the history is full) */
+		if(raw->hist->len >= raw->hist->max)
+			free(raw->hist->history[raw->hist->max - 1]);
+
 		/* memmove(3) the entire history */
 		memmove(raw->hist->history + 1, raw->hist->history, sizeof(char *) * (raw->hist->max - 1));
-		raw->hist->index++;
+		raw->hist->index = 0;
 
 		/* update length */
 		raw->hist->len++;
@@ -347,8 +348,9 @@ static void _raw_hist_add_str(raw_t *raw, char *str) {
 	}
 
 	/* modify (or add) history item */
-	if(raw->hist->index >= 0)
+	if(raw->hist->index > -1)
 		free(raw->hist->history[raw->hist->index]);
+
 	raw->hist->history[raw->hist->index] = _raw_strdup(str);
 } /* _raw_hist_add_str() */
 
@@ -527,12 +529,16 @@ raw_t *raw_new(char *atexit) {
 	return raw;
 } /* raw_new() */
 
-void raw_hist(raw_t *raw, bool set, int size) {
+int raw_hist(raw_t *raw, bool set, int size) {
 	assert(raw->safe, "raw_t structure not allocated");
+
+	/* size *must* be at least 1 */
+	if(size <= 0)
+		return -1;
 
 	/* ignore re-setting of history */
 	if(raw->settings->history == BOOL(set))
-		return;
+		return -2;
 
 	raw->settings->history = BOOL(set);
 
@@ -543,6 +549,8 @@ void raw_hist(raw_t *raw, bool set, int size) {
 		_raw_hist_free(raw->hist);
 		free(raw->hist);
 	}
+
+	return 0;
 } /* raw_hist() */
 
 void raw_hist_add_str(raw_t *raw, char *str) {
@@ -560,12 +568,16 @@ void raw_hist_add(raw_t *raw) {
 	_raw_hist_add_str(raw, raw->buffer);
 } /* raw_hist_add() */
 
-void raw_comp(raw_t *raw, bool set, char **(*callback)(char *), void (*cleanup)(char **)) {
+int raw_comp(raw_t *raw, bool set, char **(*callback)(char *), void (*cleanup)(char **)) {
 	assert(raw->safe, "raw_t structure not allocated");
+
+	/* callback() is required */
+	if(!callback)
+		return -1;
 
 	/* ignore re-setting of completion */
 	if(raw->settings->completion == BOOL(set))
-		return;
+		return -2;
 
 	raw->settings->completion = BOOL(set);
 
@@ -577,6 +589,8 @@ void raw_comp(raw_t *raw, bool set, char **(*callback)(char *), void (*cleanup)(
 	else {
 		free(raw->comp);
 	}
+
+	return 0;
 } /* raw_comp() */
 
 void raw_free(raw_t *raw) {
@@ -797,6 +811,7 @@ char *raw_input(raw_t *raw, char *prompt) {
 		/* add current line status to temporary history */
 		if(raw->hist->index >= 0)
 			_raw_hist_add_str(raw, raw->line->line->str);
+
 	} while(!enter);
 
 	/* disable raw mode */

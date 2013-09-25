@@ -29,6 +29,8 @@
 #define len(x) (int) (sizeof(x) / sizeof(*x))
 
 char **callback(char *str) {
+	return NULL;
+
 	char *table[] = {
 		"hello",
 		"hxllo",
@@ -67,7 +69,7 @@ void cleanup(char **table) {
 int main(void) {
 	raw_t *raw;
    	raw = raw_new("exit");
-	raw_hist(raw, true, 1000);
+	raw_hist(raw, true, 6);
 	raw_comp(raw, true, callback, cleanup);
 
 	char *input = NULL;
