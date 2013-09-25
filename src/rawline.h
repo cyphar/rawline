@@ -43,6 +43,8 @@ void raw_free(raw_t *);
 int raw_hist(raw_t *, bool, int); /* returns a negative int if an error occured */
 void raw_hist_add(raw_t *);
 void raw_hist_add_str(raw_t *, char *);
+char *raw_hist_get(raw_t *);
+int raw_hist_set(raw_t *, char *); /* returns a negative int if an error occured */
 
 /* Set completion (including callback) */
 int raw_comp(raw_t *, bool, char **(*callback)(char *), void (*cleanup)(char **)); /* returns a negative int if an error occured */

@@ -26,11 +26,7 @@
 
 #include "rawline.h"
 
-#define len(x) (int) (sizeof(x) / sizeof(*x))
-
 char **callback(char *str) {
-	return NULL;
-
 	char *table[] = {
 		"hello",
 		"hxllo",
@@ -42,10 +38,14 @@ char **callback(char *str) {
 	if(!strcmp(str, "helll"))
 		table[0] = "helllo";
 
-	char **ret = malloc(sizeof(char *) * len(table));
-
+	int tablelen = 1;
 	int i;
-	for(i = 0; i < len(table); i++) {
+	for(i = 0; table[i] != NULL; i++)
+		tablelen++;
+
+	char **ret = malloc(sizeof(char *) * tablelen);
+
+	for(i = 0; i < tablelen; i++) {
 		if(table[i]) {
 			ret[i] = malloc(strlen(table[i]) + 1);
 			strcpy(ret[i], table[i]);
@@ -62,15 +62,27 @@ void cleanup(char **table) {
 	int i;
 	for(i = 0; table[i] != NULL; i++)
 		free(table[i]);
-
 	free(table);
 } /* cleanup() */
+
+#define EXAMPLE_HISTORY_SERIAL	"hello\n" \
+								"this\n" \
+								"is\n" \
+								"a\n" \
+								"test\n" \
+								"of\n" \
+								"the\n" \
+								"emergency\n" \
+								"broadcast\n" \
+								"system\n"
 
 int main(void) {
 	raw_t *raw;
    	raw = raw_new("exit");
-	raw_hist(raw, true, 6);
+	raw_hist(raw, true, 2);
 	raw_comp(raw, true, callback, cleanup);
+
+	raw_hist_set(raw, EXAMPLE_HISTORY_SERIAL);
 
 	char *input = NULL;
 	do {
@@ -81,8 +93,10 @@ int main(void) {
 			printf("%s\n", input);
 			raw_hist_add(raw);
 		}
+
 	} while(strcmp(input, "exit"));
 
+	fprintf(stderr, "\n--Recent commands--\n%s\n", raw_hist_get(raw));
 	raw_free(raw);
 	return 0;
 } /* main() */

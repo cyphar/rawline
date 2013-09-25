@@ -66,6 +66,7 @@ struct _raw_term {
 struct _raw_hist {
 	char **history; /* entire history (stored in reverse, where history[0] is the latest history item) */
 	char *original; /* original input (position history[-1]) */
+	char *buffer; /* stores buffer of serialised history */
 
 	int len; /* size of history */
 	int max; /* maximum size of history */
@@ -119,11 +120,19 @@ static char *_raw_strdup(char *str) {
 	return ret;
 } /* _raw_strdup() */
 
+static int _raw_strnchr(char *str, char ch) {
+	int ret = 0, i, len = strlen(str);
+	for(i = 0; i < len; i++)
+		if(str[i] == ch)
+			ret++;
+	return ret;
+} /* _raw_strnchr() */
+
 static void _raw_error(int err) {
 	switch(err) {
 		case BELL:
-			printf(C_BELL);
-			fflush(stdout);
+			fprintf(stderr, C_BELL);
+			fflush(stderr);
 		case SUCCESS:
 		case SILENT:
 		default:
@@ -280,13 +289,14 @@ static void _raw_redraw(raw_t *raw, bool change) {
 static struct _raw_hist *_raw_hist_new(int size) {
 	struct _raw_hist *hist = malloc(sizeof(struct _raw_hist));
 
-	hist->max = size;
+	hist->max = size + 1;
 	hist->len = 0;
 	hist->index = -1;
 
 	hist->history = malloc(sizeof(char *) * hist->max);
 	memset(hist->history, 0, sizeof(char *) * hist->max);
 
+	hist->buffer = NULL;
 	hist->original = NULL;
 
 	return hist;
@@ -315,13 +325,13 @@ static void _raw_hist_free(struct _raw_hist *hist) {
 	int i;
 	for(i = 0; i < hist->max; i++)
 		free(hist->history[i]);
-
 	free(hist->history);
+
+	free(hist->buffer);
+	free(hist->original);
 
 	hist->len = 0;
 	hist->max = 0;
-
-	free(hist->original);
 } /* _raw_hist_free() */
 
 static void _raw_hist_add_str(raw_t *raw, char *str) {
@@ -386,6 +396,63 @@ static int _raw_hist_move(raw_t *raw, int move) {
 	return SUCCESS;
 } /* _raw_hist_move() */
 
+static char *_raw_hist_to_serial(raw_t *raw) {
+	char *ret = NULL;
+
+	int i, len = 0, itemlen = 0;
+	for(i = 0; i < raw->hist->len; i++) {
+		itemlen = strlen(raw->hist->history[i]) + 1;
+
+		ret = realloc(ret, len + itemlen);
+		memcpy(ret + len, raw->hist->history[i], itemlen);
+
+		len += itemlen;
+		ret[len - 1] = '\n'; /* the seperator */
+	}
+
+	if(!ret)
+		return NULL;
+
+	/* null terminate string */
+	ret[len - 1] = '\0';
+	return ret;
+} /* _raw_hist_to_serial() */
+
+static int _raw_hist_from_serial(raw_t *raw, char *str) {
+	/* no string given */
+	if(!str)
+		return -1;
+
+	/* eradicate the old history. */
+	int max = raw->hist->max - 1;
+	_raw_hist_free(raw->hist);
+	free(raw->hist);
+
+	/* get length of serialised history */
+	int len = _raw_strnchr(str, '\n');
+
+	/* length is upper limit */
+	if(len > max)
+		max = len;
+
+	/* make a new history */
+	raw->hist = _raw_hist_new(max);
+
+	/* fill up the history with the tokens */
+	str = _raw_strdup(str);
+	char *tok = strtok(str, "\n");
+
+	if(tok) {
+		do {
+			raw->hist->index = -1;
+			_raw_hist_add_str(raw, tok);
+		} while((tok = strtok(NULL, "\n")) != NULL);
+	}
+
+	free(str);
+	return 0;
+} /* _raw_hist_from_serial() */
+
 /* == Completion == */
 
 static char **_raw_comp_filter(raw_t *raw, char *str) {
@@ -397,6 +464,9 @@ static char **_raw_comp_filter(raw_t *raw, char *str) {
 	char **table = raw->comp->callback(str);
 	char **search = NULL;
 
+	if(!table)
+		return NULL;
+
 	/* filter table with string */
 	int i, searchlen = 0, lenstr = strlen(str);
 	for(i = 0; table[i] != NULL; i++) {
@@ -406,7 +476,7 @@ static char **_raw_comp_filter(raw_t *raw, char *str) {
 
 			/* append the string to the search table */
 			search = realloc(search, searchlen * sizeof(char *));
-			search[searchlen-1] = _raw_strdup(table[i]);
+			search[searchlen - 1] = _raw_strdup(table[i]);
 		}
 	}
 
@@ -427,14 +497,15 @@ static char *_raw_comp_get(raw_t *raw, char *str) {
 
 	char **search = _raw_comp_filter(raw, str);
 
-	/* no matches for input */
-	if(search[0] == NULL) {
-		int i;
-		for(i = 0; search[i] != NULL; i++)
-			free(search[i]);
-		free(search);
+	/* no matches */
+	if(!search || !search[0]) {
+		if(search) {
+			int i;
+			for(i = 0; search[i] != NULL; i++)
+				free(search[i]);
+			free(search);
+		}
 
-		/* return original string, since there are no matches */
 		return _raw_strdup(str);
 	}
 
@@ -568,6 +639,26 @@ void raw_hist_add(raw_t *raw) {
 	_raw_hist_add_str(raw, raw->buffer);
 } /* raw_hist_add() */
 
+char *raw_hist_get(raw_t *raw) {
+	assert(raw->safe, "raw_t structure not allocated");
+	assert(raw->settings->history, "raw_t history is not enabled");
+
+	char *serial = _raw_hist_to_serial(raw);
+
+	/* update buffer */
+	free(raw->hist->buffer);
+	raw->hist->buffer = serial;
+
+	return raw->hist->buffer;
+} /* raw_hist_get() */
+
+int raw_hist_set(raw_t *raw, char *str) {
+	assert(raw->safe, "raw_t structure not allocated");
+	assert(raw->settings->history, "raw_t history is not enabled");
+
+	return _raw_hist_from_serial(raw, str);
+} /* raw_hist_set() */
+
 int raw_comp(raw_t *raw, bool set, char **(*callback)(char *), void (*cleanup)(char **)) {
 	assert(raw->safe, "raw_t structure not allocated");
 
@@ -644,7 +735,7 @@ char *raw_input(raw_t *raw, char *prompt) {
 	struct _raw_hist *hist = NULL;
 
 	if(raw->settings->history) {
-		hist = _raw_hist_new(raw->hist->max);
+		hist = _raw_hist_new(raw->hist->max - 1);
 
 		int i;
 		for(i = 0; i < raw->hist->len; i++)
