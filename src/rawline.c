@@ -29,8 +29,23 @@
 #include "rawline.h"
 
 #if !defined(assert)
-#	define assert(cond, desc) do { if(!cond) { fprintf(stderr, "rawline: %s: condition '%s' failed -- '%s'\n", __func__, #cond, desc); abort(); } } while(0)
+#	define assert(cond, desc) do { if(!(cond)) { fprintf(stderr, "rawline: %s: condition '%s' failed -- '%s'\n", __func__, #cond, desc); abort(); } } while(0)
 #endif
+
+/* "Safe" *allocs, which abort(3) when the *alloc returns NULL. This is because, if malloc returns NULL, your day is already
+ * ruined, and the apocalypse looms. It's best to have a standard behaviour in the off chance of the zombie uprising.  */
+
+static void *_raw_malloc(size_t size) {
+	void *ret = malloc(size);
+	assert(ret != NULL, "couldn't allocate enough memory");
+	return ret;
+} /* _raw_malloc() */
+
+static void *_raw_realloc(void *ptr, size_t size) {
+	void *ret = realloc(ptr, size);
+	assert(ret != NULL, "couldn't allocate enough memory");
+	return ret;
+} /* _raw_realloc() */
 
 /* Convert bool-ish ints to bools. */
 #define BOOL(b) (!!b)
@@ -113,7 +128,7 @@ static char *_raw_strdup(char *str) {
 
 	int len = strlen(str);
 
-	char *ret = malloc(len + 1);
+	char *ret = _raw_malloc(len + 1);
 	memcpy(ret, str, len);
 
 	ret[len] = '\0';
@@ -190,7 +205,7 @@ static int _raw_del_char(raw_t *raw) {
 	int cur = raw->line->cursor, len = raw->line->line->len;
 
 	/* create a copy of the string */
-	char *cpy = malloc(len + 1);
+	char *cpy = _raw_malloc(len + 1);
 
 	/* delete char */
 	memcpy(cpy, raw->line->line->str, cur); /* copy before cursor */
@@ -198,7 +213,7 @@ static int _raw_del_char(raw_t *raw) {
 	cpy[len] = '\0';
 
 	/* copy over copy to correct line */
-	raw->line->line->str = realloc(raw->line->line->str, len + 1);
+	raw->line->line->str = _raw_realloc(raw->line->line->str, len + 1);
 	memcpy(raw->line->line->str, cpy, len + 1);
 	free(cpy);
 
@@ -231,7 +246,7 @@ static int _raw_add_char(raw_t *raw, char ch) {
 	int cur = raw->line->cursor, len = raw->line->line->len;
 
 	/* create a copy of the string */
-	char *cpy = malloc(len + 1);
+	char *cpy = _raw_malloc(len + 1);
 
 	/* add char */
 	memcpy(cpy, raw->line->line->str, cur); /* copy before cursor */
@@ -241,7 +256,7 @@ static int _raw_add_char(raw_t *raw, char ch) {
 	cpy[len] = '\0';
 
 	/* copy over copy to correct line */
-	raw->line->line->str = realloc(raw->line->line->str, len + 1);
+	raw->line->line->str = _raw_realloc(raw->line->line->str, len + 1);
 	memcpy(raw->line->line->str, cpy, len + 1);
 	free(cpy);
 
@@ -287,13 +302,13 @@ static void _raw_redraw(raw_t *raw, bool change) {
 /* == History == */
 
 static struct _raw_hist *_raw_hist_new(int size) {
-	struct _raw_hist *hist = malloc(sizeof(struct _raw_hist));
+	struct _raw_hist *hist = _raw_malloc(sizeof(struct _raw_hist));
 
 	hist->max = size + 1;
 	hist->len = 0;
 	hist->index = -1;
 
-	hist->history = malloc(sizeof(char *) * hist->max);
+	hist->history = _raw_malloc(sizeof(char *) * hist->max);
 	memset(hist->history, 0, sizeof(char *) * hist->max);
 
 	hist->buffer = NULL;
@@ -308,7 +323,7 @@ static void _raw_set_line(raw_t *raw, char *str, int cursor) {
 	int len = strlen(str);
 
 	/* copy over the string to line */
-	raw->line->line->str = realloc(raw->line->line->str, len + 1);
+	raw->line->line->str = _raw_realloc(raw->line->line->str, len + 1);
 	memcpy(raw->line->line->str, str, len);
 	raw->line->line->str[len] = '\0';
 
@@ -403,7 +418,7 @@ static char *_raw_hist_to_serial(raw_t *raw) {
 	for(i = 0; i < raw->hist->len; i++) {
 		itemlen = strlen(raw->hist->history[i]) + 1;
 
-		ret = realloc(ret, len + itemlen);
+		ret = _raw_realloc(ret, len + itemlen);
 		memcpy(ret + len, raw->hist->history[i], itemlen);
 
 		len += itemlen;
@@ -475,13 +490,13 @@ static char **_raw_comp_filter(raw_t *raw, char *str) {
 			searchlen++;
 
 			/* append the string to the search table */
-			search = realloc(search, searchlen * sizeof(char *));
+			search = _raw_realloc(search, searchlen * sizeof(char *));
 			search[searchlen - 1] = _raw_strdup(table[i]);
 		}
 	}
 
 	/* null terminate search table */
-	search = realloc(search, ++searchlen * sizeof(char *));
+	search = _raw_realloc(search, ++searchlen * sizeof(char *));
 	search[searchlen - 1] = NULL;
 
 	/* call cleanup function (if defined) */
@@ -523,7 +538,7 @@ static char *_raw_comp_get(raw_t *raw, char *str) {
 		char ch = search[0][j];
 
 		/* add current char to */
-		comp = realloc(comp, complen + 1);
+		comp = _raw_realloc(comp, complen + 1);
 		comp[complen] = ch;
 		complen++;
 
@@ -560,12 +575,12 @@ static char *_raw_comp_get(raw_t *raw, char *str) {
 
 raw_t *raw_new(char *atexit) {
 	/* alloc main structure */
-	raw_t *raw = malloc(sizeof(raw_t));
+	raw_t *raw = _raw_malloc(sizeof(raw_t));
 
 	/* set up blank input line */
-	raw->line = malloc(sizeof(struct _raw_line));
-	raw->line->prompt = malloc(sizeof(struct _raw_str));
-	raw->line->line = malloc(sizeof(struct _raw_str));
+	raw->line = _raw_malloc(sizeof(struct _raw_line));
+	raw->line->prompt = _raw_malloc(sizeof(struct _raw_str));
+	raw->line->line = _raw_malloc(sizeof(struct _raw_str));
 
 	/* set the line to "" */
 	raw->line->line->str = _raw_strdup("");
@@ -573,12 +588,12 @@ raw_t *raw_new(char *atexit) {
 	raw->line->cursor = 0;
 
 	/* set up standard settings */
-	raw->settings = malloc(sizeof(struct _raw_set));
+	raw->settings = _raw_malloc(sizeof(struct _raw_set));
 	raw->settings->history = false;
 	raw->settings->completion = false;
 
 	/* set up terminal settings */
-	raw->term = malloc(sizeof(struct _raw_term));
+	raw->term = _raw_malloc(sizeof(struct _raw_term));
 	raw->term->fd = STDIN_FILENO;
 	raw->term->mode = false;
 	tcgetattr(0, &raw->term->original);
@@ -673,7 +688,7 @@ int raw_comp(raw_t *raw, bool set, char **(*callback)(char *), void (*cleanup)(c
 	raw->settings->completion = BOOL(set);
 
 	if(set) {
-		raw->comp = malloc(sizeof(struct _raw_comp));
+		raw->comp = _raw_malloc(sizeof(struct _raw_comp));
 		raw->comp->callback = callback;
 		raw->comp->cleanup = cleanup;
 	}
