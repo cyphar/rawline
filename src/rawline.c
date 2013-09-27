@@ -773,7 +773,8 @@ char *raw_input(raw_t *raw, char *prompt) {
 
 		/* get first char */
 		char ch;
-		read(raw->term->fd, &ch, 1);
+		if(read(raw->term->fd, &ch, 1) < 0)
+			continue;
 
 		/* simple printable chars */
 		if(ch > 31 && ch < 127) {
