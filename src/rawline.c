@@ -353,8 +353,15 @@ static void _raw_hist_add_str(raw_t *raw, char *str) {
 	assert(raw->safe, "raw_t structure not allocated");
 	assert(raw->settings->history, "raw_t history not enabled");
 
-	/* This sentence explans the next section of code: "memmove(3) is magical". */
+	int index = 0;
+	if(raw->hist->index > -1)
+		index = raw->hist->index;
 
+	/* do not add duplicate consecutive entries in history */
+	if(index < raw->hist->len && !strcmp(raw->hist->history[index], str))
+		return;
+
+	/* memmove(3) is magical */
 	if(raw->hist->index < 0) {
 		/* free the last item in the history (if the history is full) */
 		if(raw->hist->len >= raw->hist->max)
