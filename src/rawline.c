@@ -882,13 +882,13 @@ char *raw_input(raw_t *raw, char *prompt) {
 									/* extended escape */
 									{
 										/* read next two byes of extended escape sequence */
-										char eseq[2];
-										if(read(raw->term->fd, eseq, 2) < 0)
+										char eseq;
+										if(read(raw->term->fd, &eseq, 1) < 0)
 											/* no extra characters */
 											break;
 
-										if(seq[1] == 51 && eseq[0] == 126)
-											/* delete */
+										/* delete */
+										if(seq[1] == 51 && eseq == 126)
 											err = _raw_delete(raw);
 									}
 									break;
