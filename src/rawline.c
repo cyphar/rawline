@@ -853,62 +853,61 @@ char *raw_input(raw_t *raw, char *prompt) {
 							/* no extra characters */
 							break;
 
-						/* valid start of escape sequence */
-						if(seq[0] == 91) {
-							switch(seq[1]) {
-								case 68:
-									/* left arrow */
-									move = true;
-									err = _raw_left(raw);
-									break;
-								case 67:
-									/* right arrow */
-									move = true;
-									err = _raw_right(raw);
-									break;
-								case 65: /* up arrow */
-								case 66: /* down arrow */
-									if(raw->settings->history) {
-										int dir = seq[1] == 65 ? _RAW_HIST_PREV : _RAW_HIST_NEXT;
+						/* first character of escape sequence isn't standard on all keyboards,
+						 * so just ignore it and focus on the actual key */
+						switch(seq[1]) {
+							case 68:
+								/* left arrow */
+								move = true;
+								err = _raw_left(raw);
+								break;
+							case 67:
+								/* right arrow */
+								move = true;
+								err = _raw_right(raw);
+								break;
+							case 65: /* up arrow */
+							case 66: /* down arrow */
+								if(raw->settings->history) {
+									int dir = seq[1] == 65 ? _RAW_HIST_PREV : _RAW_HIST_NEXT;
 
-										err = _raw_hist_move(raw, dir);
-										raw->line->cursor = raw->line->line->len;
-									}
-									else {
-										err = BELL;
-									}
-									break;
-								case 49:
-								case 50:
-								case 51:
-								case 52:
-								case 53:
-								case 54:
-									/* extended escape */
-									{
-										/* read next two byes of extended escape sequence */
-										char eseq;
-										if(read(raw->term->fd, &eseq, 1) < 0)
-											/* no extra characters */
-											break;
-
-										/* delete */
-										if(seq[1] == 51 && eseq == 126)
-											err = _raw_delete(raw);
-									}
-									break;
-								case 70: /* end */
+									err = _raw_hist_move(raw, dir);
 									raw->line->cursor = raw->line->line->len;
-									move = true;
-									break;
-								case 72: /* home */
-									raw->line->cursor = 0;
-									move = true;
-									break;
-								default:
+								}
+								else {
 									err = BELL;
-									break;
-							}
+								}
+								break;
+							case 49:
+							case 50:
+							case 51:
+							case 52:
+							case 53:
+							case 54:
+								/* extended escape */
+								{
+									/* read next two byes of extended escape sequence */
+									char eseq;
+									if(read(raw->term->fd, &eseq, 1) < 0)
+										/* no extra characters */
+										break;
+
+									/* delete */
+									if(seq[1] == 51 && eseq == 126)
+										err = _raw_delete(raw);
+								}
+								break;
+							case 70: /* end */
+								raw->line->cursor = raw->line->line->len;
+								move = true;
+								break;
+							case 72: /* home */
+								raw->line->cursor = 0;
+								move = true;
+								break;
+							default:
+								err = BELL;
+								break;
 						}
 					}
 					break;
