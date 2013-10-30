@@ -32,23 +32,23 @@
 #	define false 0
 #endif
 
-/* Opaque external raw_t structure. */
-typedef struct raw_t raw_t;
+/* Main raw_t structure. */
+struct raw_t;
 
 /* Create new and free raw_t structures. */
-raw_t *raw_new(char *);
-void raw_free(raw_t *);
+struct raw_t *raw_new(char *);
+void raw_free(struct raw_t *);
 
 /* Set history, and add last input (or any arbitrary string) */
-int raw_hist(raw_t *, bool, int); /* returns a negative int if an error occured */
-void raw_hist_add(raw_t *);
-void raw_hist_add_str(raw_t *, char *);
-char *raw_hist_get(raw_t *);
-int raw_hist_set(raw_t *, char *); /* returns a negative int if an error occured */
+int raw_hist(struct raw_t *, bool, int); /* returns a negative int if an error occured */
+void raw_hist_add(struct raw_t *);
+void raw_hist_add_str(struct raw_t *, char *);
+char *raw_hist_get(struct raw_t *);
+int raw_hist_set(struct raw_t *, char *); /* returns a negative int if an error occured */
 
 /* Set completion (including callback) */
-int raw_comp(raw_t *, bool, char **(*callback)(char *), void (*cleanup)(char **)); /* returns a negative int if an error occured */
+int raw_comp(struct raw_t *, bool, char **(*callback)(char *), void (*cleanup)(char **)); /* returns a negative int if an error occured */
 
 /* Returns a string taken from input, with emacs-like line editing (using give prompt). */
-char *raw_input(raw_t *, char*);
+char *raw_input(struct raw_t *, char*);
 #endif

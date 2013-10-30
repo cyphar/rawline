@@ -58,8 +58,7 @@ static void *_raw_realloc(void *ptr, size_t size) {
 #define C_CUR_MOVE_COL		"\x1b[%dG"	/* CHA -- Move to absolute column <n> */
 #define C_LN_CLEAR_END		"\x1b[0K"	/* EL(0) -- Clear from cursor to EOL */
 
-/* Structures used both externally and internally by rawline. External structures end with _t
- * and are typedef'd. Internal structures begin with a single '_' and aren't *ever* typedef'd. */
+/* Structures used both externally and internally by rawline. External structures end with _t. */
 
 struct _raw_str {
 	char *str; /* string representation */
@@ -160,7 +159,7 @@ static void _raw_error(int err) {
  * Essentially, undo all of the hard work of terminal developers and send the terminal back in time,
  * to the 1960s. ;) */
 
-static void _raw_mode(raw_t *raw, bool state) {
+static void _raw_mode(struct raw_t *raw, bool state) {
 	assert(raw->safe, "raw_t structure not allocated");
 
 	/* get original settings */
@@ -192,7 +191,7 @@ static void _raw_mode(raw_t *raw, bool state) {
 
 /* == Line Editing == */
 
-static int _raw_del_char(raw_t *raw) {
+static int _raw_del_char(struct raw_t *raw) {
 	assert(raw->safe, "raw_t structure not allocated");
 
 	/* if you try to delete the end of the line, move
@@ -228,7 +227,7 @@ static int _raw_del_char(raw_t *raw) {
 	return SUCCESS;
 } /* _raw_del_char() */
 
-static int _raw_backspace(raw_t *raw) {
+static int _raw_backspace(struct raw_t *raw) {
 	assert(raw->safe, "raw_t structure not allocated");
 
 	/* backspace is invalid if there is no input
@@ -243,7 +242,7 @@ static int _raw_backspace(raw_t *raw) {
 
 #define _raw_delete(raw) _raw_del_char(raw)
 
-static int _raw_add_char(raw_t *raw, char ch) {
+static int _raw_add_char(struct raw_t *raw, char ch) {
 	assert(raw->safe, "raw_t structure not allocated");
 
 	/* update len and make shorthand variables */
@@ -272,7 +271,7 @@ static int _raw_add_char(raw_t *raw, char ch) {
 
 #define _raw_insert(raw, ch) _raw_add_char(raw, ch)
 
-static int _raw_move_cur(raw_t *raw, int offset) {
+static int _raw_move_cur(struct raw_t *raw, int offset) {
 	assert(raw->safe, "raw_t structure not allocated");
 
 	int new_cursor = raw->line->cursor + offset;
@@ -289,7 +288,7 @@ static int _raw_move_cur(raw_t *raw, int offset) {
 #define _raw_left(raw) _raw_move_cur(raw, -1)
 #define _raw_right(raw) _raw_move_cur(raw, 1)
 
-static void _raw_redraw(raw_t *raw, bool change) {
+static void _raw_redraw(struct raw_t *raw, bool change) {
 	assert(raw->safe, "raw_t structure not allocated");
 
 	/* redraw input string */
@@ -322,7 +321,7 @@ static struct _raw_hist *_raw_hist_new(int size) {
 	return hist;
 } /* _raw_hist_new() */
 
-static void _raw_set_line(raw_t *raw, char *str, int cursor) {
+static void _raw_set_line(struct raw_t *raw, char *str, int cursor) {
 	assert(raw->safe, "raw_t structure not allocated");
 
 	int len = strlen(str);
@@ -354,7 +353,7 @@ static void _raw_hist_free(struct _raw_hist *hist) {
 	hist->max = 0;
 } /* _raw_hist_free() */
 
-static void _raw_hist_add_str(raw_t *raw, char *str) {
+static void _raw_hist_add_str(struct raw_t *raw, char *str) {
 	assert(raw->safe, "raw_t structure not allocated");
 	assert(raw->settings->history, "raw_t history not enabled");
 
@@ -394,7 +393,7 @@ static void _raw_hist_add_str(raw_t *raw, char *str) {
 #define _RAW_HIST_PREV 1
 #define _RAW_HIST_NEXT -1
 
-static int _raw_hist_move(raw_t *raw, int move) {
+static int _raw_hist_move(struct raw_t *raw, int move) {
 	assert(raw->safe, "raw_t structure not allocated");
 	assert(raw->settings->history, "raw_t history not enabled");
 
@@ -423,7 +422,7 @@ static int _raw_hist_move(raw_t *raw, int move) {
 	return SUCCESS;
 } /* _raw_hist_move() */
 
-static char *_raw_hist_to_serial(raw_t *raw) {
+static char *_raw_hist_to_serial(struct raw_t *raw) {
 	char *ret = NULL;
 
 	int i, len = 0, itemlen = 0;
@@ -445,7 +444,7 @@ static char *_raw_hist_to_serial(raw_t *raw) {
 	return ret;
 } /* _raw_hist_to_serial() */
 
-static int _raw_hist_from_serial(raw_t *raw, char *str) {
+static int _raw_hist_from_serial(struct raw_t *raw, char *str) {
 	/* no string given */
 	if(!str)
 		return -1;
@@ -482,7 +481,7 @@ static int _raw_hist_from_serial(raw_t *raw, char *str) {
 
 /* == Completion == */
 
-static char **_raw_comp_filter(raw_t *raw, char *str) {
+static char **_raw_comp_filter(struct raw_t *raw, char *str) {
 	assert(raw->safe, "raw_t structure not allocated");
 	assert(raw->settings->completion, "raw_t completion not enabled");
 	assert(raw->comp->callback, "raw_t completion callback not defined");
@@ -518,7 +517,7 @@ static char **_raw_comp_filter(raw_t *raw, char *str) {
 	return search;
 } /* _raw_comp_filter() */
 
-static char *_raw_comp_get(raw_t *raw, char *str) {
+static char *_raw_comp_get(struct raw_t *raw, char *str) {
 	assert(raw->safe, "raw_t structure not allocated");
 	assert(raw->settings->completion, "raw_t completion not enabled");
 
@@ -585,9 +584,9 @@ static char *_raw_comp_get(raw_t *raw, char *str) {
  * programs will ever need to use. They handle *ALL* memory management, and rawline structures aren't
  * to be allocated by the user and are opaque. */
 
-raw_t *raw_new(char *atexit) {
+struct raw_t *raw_new(char *atexit) {
 	/* alloc main structure */
-	raw_t *raw = _raw_malloc(sizeof(raw_t));
+	struct raw_t *raw = _raw_malloc(sizeof(struct raw_t));
 
 	/* set up blank input line */
 	raw->line = _raw_malloc(sizeof(struct _raw_line));
@@ -627,7 +626,7 @@ raw_t *raw_new(char *atexit) {
 	return raw;
 } /* raw_new() */
 
-int raw_hist(raw_t *raw, bool set, int size) {
+int raw_hist(struct raw_t *raw, bool set, int size) {
 	assert(raw->safe, "raw_t structure not allocated");
 
 	/* size *must* be at least 1 */
@@ -651,14 +650,14 @@ int raw_hist(raw_t *raw, bool set, int size) {
 	return 0;
 } /* raw_hist() */
 
-void raw_hist_add_str(raw_t *raw, char *str) {
+void raw_hist_add_str(struct raw_t *raw, char *str) {
 	assert(raw->safe, "raw_t structure not allocated");
 	assert(raw->settings->history, "raw_t history is not enabled");
 
 	_raw_hist_add_str(raw, str);
 } /* raw_hist_add_str() */
 
-void raw_hist_add(raw_t *raw) {
+void raw_hist_add(struct raw_t *raw) {
 	assert(raw->safe, "raw_t structure not allocated");
 	assert(raw->settings->history, "raw_t history is not enabled");
 	assert(raw->buffer, "no previous input stored in raw_t structure");
@@ -666,7 +665,7 @@ void raw_hist_add(raw_t *raw) {
 	_raw_hist_add_str(raw, raw->buffer);
 } /* raw_hist_add() */
 
-char *raw_hist_get(raw_t *raw) {
+char *raw_hist_get(struct raw_t *raw) {
 	assert(raw->safe, "raw_t structure not allocated");
 	assert(raw->settings->history, "raw_t history is not enabled");
 
@@ -679,14 +678,14 @@ char *raw_hist_get(raw_t *raw) {
 	return raw->hist->buffer;
 } /* raw_hist_get() */
 
-int raw_hist_set(raw_t *raw, char *str) {
+int raw_hist_set(struct raw_t *raw, char *str) {
 	assert(raw->safe, "raw_t structure not allocated");
 	assert(raw->settings->history, "raw_t history is not enabled");
 
 	return _raw_hist_from_serial(raw, str);
 } /* raw_hist_set() */
 
-int raw_comp(raw_t *raw, bool set, char **(*callback)(char *), void (*cleanup)(char **)) {
+int raw_comp(struct raw_t *raw, bool set, char **(*callback)(char *), void (*cleanup)(char **)) {
 	assert(raw->safe, "raw_t structure not allocated");
 
 	/* callback() is required */
@@ -711,7 +710,7 @@ int raw_comp(raw_t *raw, bool set, char **(*callback)(char *), void (*cleanup)(c
 	return 0;
 } /* raw_comp() */
 
-void raw_free(raw_t *raw) {
+void raw_free(struct raw_t *raw) {
 	assert(raw->safe, "raw_t structure not allocated");
 
 	/* completely clear out line */
@@ -746,7 +745,7 @@ void raw_free(raw_t *raw) {
 	free(raw);
 } /* raw_free() */
 
-char *raw_input(raw_t *raw, char *prompt) {
+char *raw_input(struct raw_t *raw, char *prompt) {
 	assert(raw->safe, "raw_t structure not allocated");
 
 	/* erase old line information */

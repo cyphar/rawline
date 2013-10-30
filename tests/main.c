@@ -77,7 +77,7 @@ void cleanup(char **table) {
 								"system\n"
 
 int main(void) {
-	raw_t *raw;
+	struct raw_t *raw;
    	raw = raw_new("exit");
 	raw_hist(raw, true, 2);
 	raw_comp(raw, true, callback, cleanup);
