@@ -97,19 +97,6 @@ struct _raw_set {
 	bool completion; /* is completion enabled? */
 };
 
-struct raw_t {
-	bool safe; /* has everything been allocated? */
-
-	struct _raw_line *line; /* current line state */
-	struct _raw_set *settings; /* settings of line editing */
-	struct _raw_term *term; /* terminal state / settings */
-	struct _raw_hist *hist; /* history data */
-	struct _raw_comp *comp; /* completion data */
-
-	char *atexit; /* the line to return if input is abruptly exited (if NULL, delete current character [if possible] else return current input) */
-	char *buffer; /* "output buffer", used to hold latest line to keep all memory management in rawline */
-};
-
 /* Internal Error Types */
 enum {
 	SUCCESS, /* no errors to report */
