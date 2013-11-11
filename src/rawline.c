@@ -878,9 +878,24 @@ char *raw_input(struct raw_t *raw, char *prompt) {
 										/* no extra characters */
 										break;
 
-									/* delete */
-									if(seq[1] == 51 && eseq == 126)
-										err = _raw_delete(raw);
+									if(eseq == 126) {
+										switch(seq[1]) {
+											case 51: /* delete */
+												err = _raw_delete(raw);
+												break;
+											case 49: /* home */
+												raw->line->cursor = 0;
+												move = true;
+												break;
+											case 52: /* end */
+												raw->line->cursor = raw->line->line->len;
+												move = true;
+												break;
+											default:
+												err = BELL;
+												break;
+										}
+									}
 								}
 								break;
 							case 70: /* end */
