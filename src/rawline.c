@@ -60,7 +60,7 @@ static void *_raw_realloc(void *ptr, size_t size) {
 #define C_CUR_MOVE_FORWARD	"\x1b[%dC"
 #define C_CUR_MOVE_BACK		"\x1b[%dD"
 
-/* Structures used both externally and internally by rawline. External structures end with _t. */
+/* Structures used internally by rawline. External structures end with _t. */
 
 struct _raw_str {
 	char *str; /* string representation */
@@ -282,17 +282,21 @@ static void _raw_redraw(struct raw_t *raw, bool change) {
 	assert(raw->safe, "raw_t structure not allocated");
 
 	/* move to after the prompt */
-	printf(C_CUR_MOVE_BACK, raw->line->prompt->len + raw->line->oldcursor);
+	if(raw->line->oldcursor)
+		printf(C_CUR_MOVE_BACK, raw->line->oldcursor);
 
 	/* redraw input string */
 	if(change) {
 		printf(C_LN_CLEAR_END);
-		printf("%s%s", raw->line->prompt->str, raw->line->line->str);
-		printf(C_CUR_MOVE_BACK, raw->line->prompt->len + raw->line->line->len);
+		printf("%s", raw->line->line->str);
+		printf(C_CUR_MOVE_BACK, raw->line->line->len);
 	}
 
 	/* update the cursor position */
-	printf(C_CUR_MOVE_FORWARD, raw->line->prompt->len + raw->line->cursor);
+	if(raw->line->cursor)
+		printf(C_CUR_MOVE_FORWARD, raw->line->cursor);
+
+	/* commit changes to tty */
 	fflush(stdout);
 } /* _raw_redraw() */
 
