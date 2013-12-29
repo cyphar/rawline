@@ -76,7 +76,7 @@ void cleanup(char **table) {
 								"broadcast\n" \
 								"system\n"
 
-int main(void) {
+int main(int argc, char **argv) {
 	struct raw_t *raw;
    	raw = raw_new("exit");
 	raw_hist(raw, true, 2);
@@ -84,13 +84,17 @@ int main(void) {
 
 	raw_hist_set(raw, EXAMPLE_HISTORY_SERIAL);
 
-	char *input = NULL;
+	char *input = NULL, *format = "%s\n";
+
+	if(argc > 1 && !strcmp(argv[1], "-n"))
+		format = "%s";
+
 	do {
 
 		input = raw_input(raw, ">>> ");
 
 		if(strlen(input)) {
-			printf("%s\n", input);
+			printf(format, input);
 			raw_hist_add(raw);
 		}
 
