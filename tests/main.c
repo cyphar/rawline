@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
 
 	do {
 
-		input = raw_input(raw, ">>> ");
+		input = raw_input(raw, "\x1b[1;32m>>>\x1b[0m ");
 
 		if(strlen(input)) {
 			printf(format, input);
