@@ -289,7 +289,9 @@ static void _raw_redraw(struct raw_t *raw, bool change) {
 	if(change) {
 		printf(C_LN_CLEAR_END);
 		printf("%s", raw->line->line->str);
-		printf(C_CUR_MOVE_BACK, raw->line->line->len);
+
+		if(raw->line->line->len)
+			printf(C_CUR_MOVE_BACK, raw->line->line->len);
 	}
 
 	/* update the cursor position */

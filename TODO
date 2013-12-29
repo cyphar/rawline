@@ -1,1 +1,0 @@
-* Fix prompts that have tabs, escape codes, etc from messing up the relative jumps.
