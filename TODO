@@ -1,1 +1,1 @@
-* Use relative jumps to stop strange output mucking up the terminal.
+* Fix prompts that have tabs, escape codes, etc from messing up the relative jumps.
