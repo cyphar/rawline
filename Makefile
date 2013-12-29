@@ -36,6 +36,10 @@ WARNINGS	?= -Wall -Wextra -Werror
 
 $(NAME): $(SRC) $(INCLUDE) $(TEST)
 	$(CC) $(CFLAGS) $(SRC) $(TEST) $(LFLAGS) $(WARNINGS) -o $(NAME)
+	strip $(NAME)
 
 debug: $(SRC) $(INCLUDE) $(TEST)
-	$(CC) $(CFLAGS) -g -O0 $(SRC) $(TEST) $(LFLAGS) $(WARNINGS) -o $(NAME)
+	$(CC) $(CFLAGS) -ggdb -O0 $(SRC) $(TEST) $(LFLAGS) $(WARNINGS) -o $(NAME)
+
+clean:
+	rm -f $(NAME)
