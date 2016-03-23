@@ -1,18 +1,17 @@
 rawline
 =======
 
-A small line editing library in C, intended to replace other "huge" libraries such as libedit and readline.
-Written in less than 1000 lines of MIT licensed code.
+A small line editing library in C, intended to replace other "huge" libraries
+such as libedit and readline. Written in less than 1000 lines of MPLv2 licensed
+code.
 
-Features
---------
+### Features ###
 
 * Single line editing
 * History
 * Completion
 
-Using rawline
--------------
+### Using rawline ###
 
 Everything starts with a simple:
 ```
